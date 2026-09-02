@@ -5,9 +5,8 @@
  * and are handed to Person 3's `DefaultSceneRenderer`, so the frontend never
  * reimplements scene rendering -- it only supplies the providers.
  *
- * The mock providers shipped in services/media import Node's `crypto`, so they
- * cannot run in a browser. That is exactly the case the interface exists for:
- * a different environment plugs in different providers behind the same shape.
+ * The server provides real TTS via edge-tts. The browser falls back to
+ * Web Speech API if the server is unreachable.
  */
 
 import { DefaultSceneRenderer } from '/vendor/media/scene-renderer.js';
@@ -20,37 +19,102 @@ const VOICE_BY_LANGUAGE = {
 };
 
 /**
- * Speech-synthesis TTS. Uses the browser's built-in voices, so it needs no API
- * key and no network. Reports duration by estimate because the Web Speech API
- * does not expose one up front.
+ * Server-backed TTS provider. Calls POST /tts to get real audio from edge-tts.
+ * Falls back to browser SpeechSynthesis if the server is unreachable.
  */
-export class BrowserTTSProvider extends TTSProvider {
+export class ServerTTSProvider extends TTSProvider {
   constructor() {
     super();
-    this.available =
+    this.browserAvailable =
       typeof window !== 'undefined' && 'speechSynthesis' in window;
     this.enabled = false;
+    this.serverAvailable = true;
+    this._currentAudio = null;
   }
 
   async synthesize(text, language) {
     const words = text.trim().split(/\s+/).length;
     const durationSeconds = Math.max(1, Math.ceil(words / 2.5));
 
-    if (!this.available || !this.enabled) {
-      // Not an error: the lesson continues silently with captions.
+    if (!this.enabled) {
       return { audioUrl: '', durationSeconds, format: 'none' };
     }
 
-    return {
-      audioUrl: `speech://${VOICE_BY_LANGUAGE[language] || 'en-IN'}`,
-      durationSeconds,
-      format: 'speech-synthesis',
-    };
+    // Try server TTS first
+    if (this.serverAvailable) {
+      try {
+        const response = await fetch('/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, language }),
+        });
+        if (response.ok) {
+          const blob = await response.blob();
+          const audioUrl = URL.createObjectURL(blob);
+          return { audioUrl, durationSeconds, format: 'mp3' };
+        }
+      } catch {
+        this.serverAvailable = false;
+      }
+    }
+
+    // Fallback to browser speech
+    if (this.browserAvailable) {
+      return {
+        audioUrl: `speech://${VOICE_BY_LANGUAGE[language] || 'en-IN'}`,
+        durationSeconds,
+        format: 'speech-synthesis',
+      };
+    }
+
+    return { audioUrl: '', durationSeconds, format: 'none' };
   }
 
-  /** Speak a narration line. Never throws; silence is an acceptable outcome. */
   speak(text, language, { onStart, onEnd } = {}) {
-    if (!this.available || !this.enabled) return false;
+    // Stop any current playback
+    this.stop();
+
+    // Try server TTS first
+    if (this.serverAvailable) {
+      fetch('/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, language }),
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error('TTS failed');
+          return response.blob();
+        })
+        .then((blob) => {
+          const audioUrl = URL.createObjectURL(blob);
+          const audio = new Audio(audioUrl);
+          this._currentAudio = audio;
+          audio.onplay = () => { if (onStart) onStart(); };
+          audio.onended = () => {
+            this._currentAudio = null;
+            if (onEnd) onEnd();
+          };
+          audio.onerror = () => {
+            this._currentAudio = null;
+            this._fallbackBrowserSpeak(text, language, { onStart, onEnd });
+          };
+          audio.play().catch(() => {
+            this._currentAudio = null;
+            this._fallbackBrowserSpeak(text, language, { onStart, onEnd });
+          });
+        })
+        .catch(() => {
+          this.serverAvailable = false;
+          this._fallbackBrowserSpeak(text, language, { onStart, onEnd });
+        });
+      return true;
+    }
+
+    return this._fallbackBrowserSpeak(text, language, { onStart, onEnd });
+  }
+
+  _fallbackBrowserSpeak(text, language, { onStart, onEnd } = {}) {
+    if (!this.browserAvailable) return false;
     try {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
@@ -69,16 +133,19 @@ export class BrowserTTSProvider extends TTSProvider {
   }
 
   stop() {
-    if (this.available) {
-      try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
+    if (this._currentAudio) {
+      try { this._currentAudio.pause(); this._currentAudio.currentTime = 0; } catch {}
+      this._currentAudio = null;
+    }
+    if (this.browserAvailable) {
+      try { window.speechSynthesis.cancel(); } catch {}
     }
   }
 }
 
 /**
- * Avatar provider that returns no video, which drives the SceneRenderer down
- * its documented fallback path: the polished CSS teacher panel plus captions.
- * A hosted avatar vendor would replace only this class.
+ * Avatar provider that tries the server endpoint, then falls back to
+ * the CSS teacher panel.
  */
 export class FallbackAvatarProvider extends AvatarProvider {
   constructor({ videoUrl = null } = {}) {
@@ -102,19 +169,19 @@ export class FallbackAvatarProvider extends AvatarProvider {
 /** Media pipeline wired from the contract's own renderer. */
 export class MediaAdapter {
   constructor() {
-    this.tts = new BrowserTTSProvider();
+    this.tts = new ServerTTSProvider();
     this.avatar = new FallbackAvatarProvider();
     this.renderer = new DefaultSceneRenderer();
   }
 
   setVoiceEnabled(enabled) {
-    this.tts.enabled = Boolean(enabled) && this.tts.available;
+    this.tts.enabled = Boolean(enabled) && (this.tts.serverAvailable || this.tts.browserAvailable);
     if (!this.tts.enabled) this.tts.stop();
     return this.tts.enabled;
   }
 
   get voiceAvailable() {
-    return this.tts.available;
+    return this.tts.serverAvailable || this.tts.browserAvailable;
   }
 
   /**
@@ -129,7 +196,6 @@ export class MediaAdapter {
       );
       return result;
     } catch (error) {
-      // A provider failure must never stop the lesson.
       return {
         teacherPanel: { type: 'fallback', url: '', thumbnailUrl: '' },
         visualCanvas: { type: scene.visual?.type, data: scene.visual?.data || {}, renderHint: 'standard' },

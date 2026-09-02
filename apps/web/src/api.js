@@ -91,6 +91,33 @@ export class GuruFlowClient {
     };
   }
 
+  async uploadFile(file) {
+    if (this.isLive) {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetch('/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`Upload failed: ${response.status} ${detail.slice(0, 160)}`);
+      }
+      return response.json();
+    }
+    // Fixture fallback for demo mode
+    return {
+      materialId: 'material-ncert-class9-science-ch12',
+      documentId: 'ncert-class9-science-ch12',
+      title: 'NCERT Class 9 Science - Chapter 12: Electricity (fixture)',
+      status: 'ready',
+      origin: 'fixture',
+      sectionCount: 7,
+      pageCount: 6,
+      sections: [],
+    };
+  }
+
   async createPlan({ learner, materialId, topic }) {
     if (this.isLive) {
       return request('/lessons/plan', {
