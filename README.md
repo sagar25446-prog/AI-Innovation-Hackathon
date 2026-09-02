@@ -8,6 +8,19 @@ GuruFlow is a source-grounded, multilingual AI teacher that creates personalized
 
 The focused demo uses a Class 9 Electricity upload and teaches Ohm's Law in Hinglish to a beginner. It visibly shows sources, an avatar plus circuit visual, a wrong answer, misconception recovery, and a final report.
 
+## Run the product
+
+```bash
+python -m pip install -r apps/api/requirements.txt
+python -m uvicorn apps.api.main:app --port 8077
+```
+
+Open <http://127.0.0.1:8077/> and press **Demo mode**. No API keys, no build
+step, no database. Tests: `python -m pytest apps/api/tests -q`.
+
+See [the integrated product](docs/INTEGRATED_PRODUCT.md) for the architecture,
+the flagship feature and the SWOT analysis.
+
 ## Team ownership
 
 | Owner | Directories |

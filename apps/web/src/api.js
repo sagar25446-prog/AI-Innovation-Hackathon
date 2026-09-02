@@ -1,0 +1,184 @@
+/**
+ * API client with a fixture-backed fallback.
+ *
+ * If the teacher-brain API is unreachable the client transparently switches to
+ * `demo-fixtures/`, so the judge-visible flow still completes end to end. The
+ * UI reads `client.mode` to say honestly which source it is using.
+ */
+
+const API_BASE = '';
+
+async function request(path, options = {}) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`${response.status} ${detail.slice(0, 160)}`);
+  }
+  return response.json();
+}
+
+async function loadFixture(name) {
+  const response = await fetch(`/fixtures/${name}`);
+  if (!response.ok) throw new Error(`Fixture ${name} unavailable`);
+  return response.json();
+}
+
+/** Local classifier used only in fixture mode. Mirrors the server's rules. */
+function classifyLocally(answer, optionId) {
+  if (optionId === 'decreases') return 'correct';
+  if (optionId === 'increases') return 'direct-proportionality';
+  if (optionId === 'no-change') return 'constant-current';
+
+  const text = (answer || '').toLowerCase();
+  if (!text.trim()) return 'unclear';
+  // Strip the premise clause so "resistance badhne se current kam" reads as a
+  // decrease, matching services/evaluation/misconceptions.py.
+  const claim = text
+    .replace(/resistance\s+(is\s+)?(increase[sd]?|badh\w*|doubl\w+)/g, ' ')
+    .replace(/resistance\s+badhne\s+se/g, ' ');
+
+  const down = /(decreas|less|lower|reduc|halv|half|fall|drop|inverse|kam|ghat|कम|घट)/.test(claim);
+  const up = /(increas|more|higher|rise|grow|double|badh|zyada|अधिक|बढ़)/.test(claim);
+  if (down && !up) return 'correct';
+  if (up && !down) return 'direct-proportionality';
+  if (/(same|unchanged|constant|no change)/.test(claim)) return 'constant-current';
+  return 'unclear';
+}
+
+export class GuruFlowClient {
+  constructor() {
+    this.mode = 'unknown';
+    this.attempts = {};
+    this.fixturePlan = null;
+    this.progress = { scenes: new Set(), passed: 0, failed: 0, misconception: null };
+  }
+
+  async detectMode() {
+    try {
+      const health = await request('/health');
+      this.mode = health.status === 'ok' ? 'api' : 'fixture';
+    } catch {
+      this.mode = 'fixture';
+    }
+    return this.mode;
+  }
+
+  get isLive() {
+    return this.mode === 'api';
+  }
+
+  /* --------------------------------------------------------------- */
+
+  async createMaterial({ topic, text, title }) {
+    if (this.isLive) {
+      return request('/materials', {
+        method: 'POST',
+        body: JSON.stringify({ topic, text, title }),
+      });
+    }
+    return {
+      materialId: 'material-ncert-class9-science-ch12',
+      documentId: 'ncert-class9-science-ch12',
+      title: 'NCERT Class 9 Science - Chapter 12: Electricity (fixture)',
+      status: 'ready',
+      origin: 'fixture',
+      sectionCount: 7,
+      pageCount: 6,
+      sections: [],
+    };
+  }
+
+  async createPlan({ learner, materialId, topic }) {
+    if (this.isLive) {
+      return request('/lessons/plan', {
+        method: 'POST',
+        body: JSON.stringify({ learner, materialId, topic, studentId: 'student-demo' }),
+      });
+    }
+    const plan = await loadFixture('ohms-law-beginner-hinglish.json');
+    plan.topic = topic;
+    plan.tier = 'fixture';
+    plan.estimatedSeconds = plan.scenes.reduce((sum, s) => sum + s.durationSeconds, 0);
+    plan.documentTitle = 'NCERT Class 9 Science - Chapter 12 (fixture)';
+    this.fixturePlan = plan;
+    return plan;
+  }
+
+  async switchLanguage(lessonId, language) {
+    if (this.isLive) {
+      return request(`/lessons/${lessonId}/language`, {
+        method: 'POST',
+        body: JSON.stringify({ language }),
+      });
+    }
+    // Fixtures exist in Hinglish only; keep the plan rather than fail.
+    return this.fixturePlan;
+  }
+
+  async completeScene(lessonId, sceneId) {
+    if (this.isLive) {
+      return request(`/lessons/${lessonId}/scenes/${sceneId}/complete`, { method: 'POST' });
+    }
+    this.progress.scenes.add(sceneId);
+    return { sceneId, scenesCompleted: this.progress.scenes.size };
+  }
+
+  async submitAnswer(lessonId, checkpointId, { answer, optionId, language }) {
+    if (this.isLive) {
+      return request(`/lessons/${lessonId}/checkpoints/${checkpointId}/answer`, {
+        method: 'POST',
+        body: JSON.stringify({ answer, optionId, language, studentId: 'student-demo' }),
+      });
+    }
+
+    const key = checkpointId;
+    this.attempts[key] = (this.attempts[key] || 0) + 1;
+    const attempt = this.attempts[key];
+    const classification = classifyLocally(answer, optionId);
+
+    if (classification === 'correct') {
+      this.progress.passed += 1;
+      if (this.progress.misconception) this.progress.misconception.status = 'resolved';
+      const fixture = await loadFixture(
+        attempt > 1 ? 'ohms-law-evaluation-retry.json' : 'ohms-law-evaluation-correct.json'
+      );
+      return { ...fixture, attempt };
+    }
+
+    if (classification === 'unclear') {
+      return {
+        correct: false,
+        mastery: 0.4,
+        feedback: 'Ek baar aur try karo. Ek line mein: current badhega ya kam hoga?',
+        nextAction: 'retry',
+        attempt,
+      };
+    }
+
+    this.progress.failed += 1;
+    const fixture = await loadFixture('ohms-law-evaluation-wrong.json');
+    this.progress.misconception = {
+      id: fixture.misconception,
+      status: 'open',
+      concept: 'ohms-law',
+    };
+    return { ...fixture, attempt };
+  }
+
+  async getReport(lessonId) {
+    if (this.isLive) {
+      return request(`/lessons/${lessonId}/report`);
+    }
+    const report = await loadFixture('ohms-law-report.json');
+    report.scenesCompleted = this.progress.scenes.size || report.scenesCompleted;
+    report.checkpointsPassed = this.progress.passed;
+    report.checkpointsFailed = this.progress.failed;
+    if (this.progress.misconception) {
+      report.misconceptions = [this.progress.misconception];
+    }
+    return report;
+  }
+}

@@ -1,0 +1,221 @@
+"""End-to-end API tests for the judge-critical path.
+
+Upload/topic -> plan -> scene -> wrong answer -> detected misconception ->
+repair -> correct retry -> final report.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+from apps.api.main import app, repository  # noqa: E402
+
+
+@pytest.fixture
+def client():
+    repository.reset()
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def make_plan(client, **learner_overrides):
+    learner = {
+        "level": "beginner",
+        "language": "hinglish",
+        "availableMinutes": 20,
+        "goal": "Understand Ohm's Law",
+    }
+    learner.update(learner_overrides)
+    response = client.post(
+        "/lessons/plan", json={"learner": learner, "topic": "Ohm's Law"}
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_health(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+def test_material_ingestion_reports_pages(client):
+    response = client.post("/materials", json={"topic": "Electricity"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    assert body["sectionCount"] > 0
+    assert body["pageCount"] > 0
+    assert body["documentId"] == "ncert-class9-science-ch12"
+
+
+def test_plan_endpoint_returns_contract_shaped_lesson(client):
+    plan = make_plan(client)
+    assert plan["id"].startswith("lesson-")
+    assert plan["learner"]["language"] == "hinglish"
+    assert len(plan["scenes"]) == 7
+    assert plan["scenes"][0]["citations"][0]["pageOrSlide"] >= 1
+
+
+def test_lesson_can_be_fetched_again(client):
+    plan = make_plan(client)
+    fetched = client.get(f"/lessons/{plan['id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["id"] == plan["id"]
+
+
+def test_judge_critical_path_wrong_then_repair_then_retry(client):
+    plan = make_plan(client)
+    lesson_id = plan["id"]
+    checkpoint_id = next(s["checkpointId"] for s in plan["scenes"] if s.get("checkpointId"))
+
+    # Watch every teaching scene before the checkpoint.
+    for scene in plan["scenes"]:
+        client.post(f"/lessons/{lesson_id}/scenes/{scene['id']}/complete")
+
+    # 1. Deliberately wrong answer -> misconception detected -> repair scene.
+    wrong = client.post(
+        f"/lessons/{lesson_id}/checkpoints/{checkpoint_id}/answer",
+        json={"answer": "Current increases when resistance increases."},
+    ).json()
+    assert wrong["correct"] is False
+    assert wrong["misconception"] == "direct-proportionality confusion"
+    assert wrong["nextAction"] == "repair"
+    assert wrong["repairScene"]["visual"]["data"]["analogy"] == "water-pipe"
+
+    # 2. Correct retry -> advance.
+    retry = client.post(
+        f"/lessons/{lesson_id}/checkpoints/{checkpoint_id}/answer",
+        json={"answer": "current kam hoga"},
+    ).json()
+    assert retry["correct"] is True
+    assert retry["nextAction"] == "advance"
+    assert retry["attempt"] == 2
+
+    # 3. Final report reflects the whole journey.
+    report = client.get(f"/lessons/{lesson_id}/report").json()
+    assert report["checkpointsFailed"] == 1
+    assert report["checkpointsPassed"] == 1
+    assert report["scenesCompleted"] == 7
+    assert report["misconceptions"][0]["id"] == "direct-proportionality confusion"
+    assert report["misconceptions"][0]["status"] == "resolved"
+    assert report["nextTopic"]["title"] == "Series and Parallel Circuits"
+
+
+def test_answer_changes_the_next_scene(client):
+    """Guards against 'fake adaptation': the answer must alter what comes next."""
+    plan = make_plan(client)
+    lesson_id = plan["id"]
+    checkpoint_id = next(s["checkpointId"] for s in plan["scenes"] if s.get("checkpointId"))
+
+    correct = client.post(
+        f"/lessons/{lesson_id}/checkpoints/{checkpoint_id}/answer",
+        json={"answer": "Current decreases"},
+    ).json()
+
+    plan2 = make_plan(client)
+    lesson2 = plan2["id"]
+    checkpoint2 = next(s["checkpointId"] for s in plan2["scenes"] if s.get("checkpointId"))
+    wrong = client.post(
+        f"/lessons/{lesson2}/checkpoints/{checkpoint2}/answer",
+        json={"answer": "Current increases"},
+    ).json()
+
+    assert correct["nextAction"] != wrong["nextAction"]
+    assert "repairScene" not in correct
+    assert "repairScene" in wrong
+
+
+def test_mcq_answer_path(client):
+    plan = make_plan(client)
+    lesson_id = plan["id"]
+    checkpoint_id = next(s["checkpointId"] for s in plan["scenes"] if s.get("checkpointId"))
+
+    result = client.post(
+        f"/lessons/{lesson_id}/checkpoints/{checkpoint_id}/answer",
+        json={"answer": "", "optionId": "increases"},
+    ).json()
+    assert result["nextAction"] == "repair"
+
+
+def test_language_switch_preserves_progress(client):
+    plan = make_plan(client)
+    lesson_id = plan["id"]
+    checkpoint_id = next(s["checkpointId"] for s in plan["scenes"] if s.get("checkpointId"))
+
+    client.post(f"/lessons/{lesson_id}/scenes/{plan['scenes'][0]['id']}/complete")
+    client.post(
+        f"/lessons/{lesson_id}/checkpoints/{checkpoint_id}/answer",
+        json={"answer": "Current increases"},
+    )
+
+    switched = client.post(
+        f"/lessons/{lesson_id}/language", json={"language": "english"}
+    ).json()
+
+    assert switched["id"] == lesson_id
+    assert switched["learner"]["language"] == "english"
+    assert "Hello students" in switched["scenes"][0]["narration"]
+
+    # Progress survived the switch.
+    report = client.get(f"/lessons/{lesson_id}/report").json()
+    assert report["scenesCompleted"] == 1
+    assert report["checkpointsFailed"] == 1
+    assert report["misconceptions"][0]["status"] == "open"
+
+
+@pytest.mark.parametrize("minutes", [5, 10, 20, 60])
+def test_time_budget_matrix_through_api(client, minutes):
+    plan = make_plan(client, availableMinutes=minutes)
+    assert plan["estimatedSeconds"] <= minutes * 60
+    assert any(s.get("checkpointId") for s in plan["scenes"])
+
+
+@pytest.mark.parametrize("level", ["beginner", "intermediate", "advanced"])
+@pytest.mark.parametrize("language", ["english", "hindi", "hinglish"])
+def test_level_language_matrix_through_api(client, level, language):
+    plan = make_plan(client, level=level, language=language)
+    assert plan["learner"]["level"] == level
+    assert plan["learner"]["language"] == language
+    for scene in plan["scenes"]:
+        assert scene["narration"].strip()
+        assert scene["objective"].strip()
+
+
+def test_watching_a_checkpoint_earns_no_mastery(client):
+    """A checkpoint is assessed, not taught, so watching it proves nothing."""
+    plan = make_plan(client)
+    lesson_id = plan["id"]
+    checkpoint_scene = next(s for s in plan["scenes"] if s.get("checkpointId"))
+
+    client.post(f"/lessons/{lesson_id}/scenes/{checkpoint_scene['id']}/complete")
+    report = client.get(f"/lessons/{lesson_id}/report").json()
+
+    assert checkpoint_scene["conceptId"] not in report["strongConcepts"]
+    assert checkpoint_scene["conceptId"] not in report["weakConcepts"]
+
+
+def test_missing_lesson_returns_404(client):
+    assert client.get("/lessons/does-not-exist").status_code == 404
+    assert (
+        client.post(
+            "/lessons/nope/checkpoints/cp/answer", json={"answer": "x"}
+        ).status_code
+        == 404
+    )
+
+
+def test_student_report_endpoint(client):
+    plan = make_plan(client)
+    client.post(f"/lessons/{plan['id']}/scenes/{plan['scenes'][0]['id']}/complete")
+    report = client.get("/students/student-demo/report")
+    assert report.status_code == 200
+    assert report.json()["studentId"] == "student-demo"
