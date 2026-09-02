@@ -99,11 +99,13 @@ async def no_store_for_assets(request, call_next):
 @app.get("/health")
 def health() -> dict[str, Any]:
     from services.llm import gemini_available
+    from services.rag import rag_status
     return {
         "status": "ok",
         "service": "guruflow-teacher-brain",
         "mode": "deterministic" if not gemini_available() else "llm-enhanced",
         "gemini": gemini_available(),
+        "rag": rag_status(),
     }
 
 

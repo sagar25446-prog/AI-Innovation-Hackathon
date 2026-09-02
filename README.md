@@ -51,6 +51,13 @@ Requires `pip install sentence-transformers chromadb` (both are in
 `apps/api/requirements.txt`). When disabled (default), retrieval uses the
 instant keyword path so tests and the core demo stay fast.
 
+Retrieval is also **orchestrated with LangChain** (`langchain-core`): sections
+are adapted to LangChain `Document`s and served through a `BaseRetriever`
+(`services/rag/langchain_layer.py`). `/health` reports
+`"rag": { "langchain": true, "mode": "langchain-orchestrated-..." }` so the
+orchestration is visible. It delegates to the same ChromaDB -> embedding ->
+keyword waterfall, so it adds no new failure mode and stays fast by default.
+
 ### Multi-format material upload and real visual rendering
 
 `POST /upload` extracts page/slide-numbered citation sections from **PDF,

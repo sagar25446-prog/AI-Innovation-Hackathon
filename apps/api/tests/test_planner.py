@@ -15,6 +15,32 @@ from services.ingestion import ingest_text, ingest_topic  # noqa: E402
 from services.planner import plan_lesson, select_tier  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def deterministic_engine(monkeypatch):
+    """Force the deterministic planner for these unit tests.
+
+    These tests assert the deterministic engine's exact structure (concept ids,
+    narrations, visuals, substeps). With a live GEMINI_API_KEY set, plan_lesson
+    would take the LLM path and the structural assertions would become flaky.
+    We suppress the key and reset the cached Gemini client so every call here
+    exercises the deterministic path deterministically.
+    """
+    import services.llm as llm
+
+    saved_client = llm._gemini_client
+    saved_attempted = llm._model_attempted
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GURUFLOW_LLM_API_KEY", raising=False)
+    llm._gemini_client = None
+    llm._model_attempted = False
+    try:
+        yield
+    finally:
+        llm._gemini_client = saved_client
+        llm._model_attempted = saved_attempted
+
+
 def learner(**overrides):
     profile = {
         "level": "beginner",

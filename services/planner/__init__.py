@@ -167,6 +167,89 @@ def _plan_lesson_deterministic(
     }
 
 
+def _as_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalise_visual(visual: Any) -> dict[str, Any]:
+    """Coerce a scene's visual spec to a known type with a valid data payload."""
+    if not isinstance(visual, dict):
+        return {"type": "concept_map", "data": {}}
+    vtype = visual.get("type")
+    if vtype not in ("circuit", "equation", "graph", "concept_map",
+                     "water_pipe_analogy", "timeline", "diagram", "code_trace"):
+        vtype = "concept_map"
+    data = visual.get("data")
+    if not isinstance(data, dict):
+        data = {}
+    return {"type": vtype, "data": data}
+
+
+def _normalise_citations(citations: Any) -> list[dict[str, Any]]:
+    """Coerce an LLM-supplied citations list to the contract citation shape.
+
+    Gemini sometimes emits free-form JSON (bare numbers/strings where a
+    citation object belongs). We drop anything that is not a dict and keep only
+    the fields the contract understands, so a stray token never becomes a 422.
+    """
+    if not isinstance(citations, list):
+        return []
+    normalised: list[dict[str, Any]] = []
+    for item in citations:
+        if not isinstance(item, dict):
+            continue
+        citation: dict[str, Any] = {}
+        if isinstance(item.get("documentId"), str):
+            citation["documentId"] = item["documentId"]
+        if item.get("pageOrSlide") is not None:
+            page = _as_int(item.get("pageOrSlide"), 0)
+            if page > 0:
+                citation["pageOrSlide"] = page
+        if isinstance(item.get("heading"), str):
+            citation["heading"] = item["heading"]
+        if isinstance(item.get("excerpt"), str):
+            citation["excerpt"] = item["excerpt"]
+        if citation:
+            normalised.append(citation)
+    return normalised
+
+
+def _normalise_llm_scenes(scenes: Any) -> list[dict[str, Any]]:
+    """Coerce LLM-produced scenes into the contract shape.
+
+    Gemini may return free-form JSON. We defensively normalise every scene so
+    Pydantic never rejects a valid plan because of one malformed field, and the
+    caller falls back to the deterministic engine when the outline is unusable.
+    """
+    normalised: list[dict[str, Any]] = []
+    for i, scene in enumerate(scenes or []):
+        if not isinstance(scene, dict):
+            continue
+        citations = _normalise_citations(scene.get("citations"))
+        grounding = scene.get("groundingStatus")
+        if not isinstance(grounding, str) or grounding not in (
+            "source_grounded", "general_knowledge",
+        ):
+            grounding = "source_grounded" if citations else "general_knowledge"
+        normalised_scene: dict[str, Any] = {
+            "id": scene.get("id") or f"scene-{i + 1}-llm",
+            "conceptId": scene.get("conceptId") or f"concept-{i + 1}",
+            "objective": scene.get("objective", ""),
+            "narration": scene.get("narration", ""),
+            "durationSeconds": _as_int(scene.get("durationSeconds"), 30) or 30,
+            "visual": _normalise_visual(scene.get("visual")),
+            "citations": citations,
+            "groundingStatus": grounding,
+        }
+        if scene.get("checkpointId"):
+            normalised_scene["checkpointId"] = str(scene["checkpointId"])
+        normalised.append(normalised_scene)
+    return normalised
+
+
 def _plan_lesson_llm(
     learner: dict[str, Any],
     material: Material,
@@ -188,18 +271,9 @@ def _plan_lesson_llm(
         if not llm_result or not llm_result.get("scenes"):
             return None
 
-        scenes = llm_result["scenes"]
-        for i, scene in enumerate(scenes):
-            if "id" not in scene:
-                scene["id"] = f"scene-{i + 1}-llm"
-            if "conceptId" not in scene:
-                scene["conceptId"] = f"concept-{i + 1}"
-            if "durationSeconds" not in scene:
-                scene["durationSeconds"] = 30
-            if "citations" not in scene:
-                scene["citations"] = []
-            if "visual" not in scene:
-                scene["visual"] = {"type": "concept_map", "data": {}}
+        scenes = _normalise_llm_scenes(llm_result["scenes"])
+        if not scenes:
+            return None
 
         total_seconds = sum(s.get("durationSeconds", 30) for s in scenes)
         return {

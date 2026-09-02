@@ -315,3 +315,17 @@ def grounding_status(results: list[RetrievalResult]) -> str:
 def best_citations(results: list[RetrievalResult]) -> list[dict[str, Any]]:
     """Citations for grounded results only; never cite a weak match."""
     return [result.citation for result in results if result.grounded]
+
+
+def rag_status() -> dict[str, Any]:
+    """Report which retrieval capabilities are live (visible in /health)."""
+    from . import langchain_layer
+
+    status = {
+        "vectorRag": bool(VECTOR_RAG_ENABLED),
+        "mode": "vector" if VECTOR_RAG_ENABLED else "keyword",
+    }
+    status["langchain"] = langchain_layer.orchestrates_langchain()
+    if status["langchain"]:
+        status["mode"] = f"langchain-orchestrated-{status['mode']}"
+    return status
