@@ -1,0 +1,157 @@
+{
+  "id": "lesson-ohms-law-beginner-hinglish",
+  "learner": {
+    "level": "beginner",
+    "language": "hinglish",
+    "availableMinutes": 20,
+    "goal": "Understand Ohm's Law"
+  },
+  "scenes": [
+    {
+      "id": "scene-1-intro",
+      "conceptId": "intro-electricity",
+      "objective": "Welcome and introduce electricity topic",
+      "narration": "Hello students! Aaj hum Electric Current aur Ohm's Law ke baare mein seekhenge. Yeh electricity ka basic rule hai.",
+      "visual": {
+        "type": "concept_map",
+        "data": {
+          "nodes": ["Electric Current", "Voltage", "Resistance", "Ohm's Law"]
+        }
+      },
+      "citations": [
+        {
+          "documentId": "ncert-class9-science-ch12",
+          "pageOrSlide": 200,
+          "excerpt": "Electric current is expressed by the amount of charge flowing through a particular area in unit time."
+        }
+      ],
+      "durationSeconds": 30
+    },
+    {
+      "id": "scene-2-current",
+      "conceptId": "electric-current",
+      "objective": "Explain what electric current is",
+      "narration": "Aaj hum Electric Current ke baare mein seekhenge. Current matlab electricity ka flow hai, bilkul paani ki nadiya ki tarah.",
+      "visual": {
+        "type": "circuit",
+        "data": {
+          "components": ["battery", "wire", "bulb"],
+          "highlight": "current-flow"
+        }
+      },
+      "citations": [
+        {
+          "documentId": "ncert-class9-science-ch12",
+          "pageOrSlide": 201,
+          "excerpt": "A continuous and closed path of an electric current is called an electric circuit."
+        }
+      ],
+      "durationSeconds": 45
+    },
+    {
+      "id": "scene-3-voltage",
+      "conceptId": "voltage",
+      "objective": "Explain what voltage is",
+      "narration": "Voltage ko samjho jaise water pressure - jitna zyada pressure, utna zyada current flow hoga. Yeh electrons ko push karta hai.",
+      "visual": {
+        "type": "circuit",
+        "data": {
+          "components": ["battery", "wire", "bulb"],
+          "highlight": "battery"
+        }
+      },
+      "citations": [
+        {
+          "documentId": "ncert-class9-science-ch12",
+          "pageOrSlide": 202,
+          "excerpt": "Electric potential difference between two points in an electric circuit carrying some current as the work done to move a unit charge."
+        }
+      ],
+      "durationSeconds": 45
+    },
+    {
+      "id": "scene-4-resistance",
+      "conceptId": "resistance",
+      "objective": "Explain what resistance is",
+      "narration": "Aur Resistance kya hai? Yeh flow ko rokata hai, jaise speed breaker. Zyada resistance matlab kam current.",
+      "visual": {
+        "type": "circuit",
+        "data": {
+          "components": ["battery", "wire", "resistor"],
+          "highlight": "resistor"
+        }
+      },
+      "citations": [
+        {
+          "documentId": "ncert-class9-science-ch12",
+          "pageOrSlide": 204,
+          "excerpt": "It is the property of a conductor to resist the flow of charges through it."
+        }
+      ],
+      "durationSeconds": 45
+    },
+    {
+      "id": "scene-5-ohms-law",
+      "conceptId": "ohms-law",
+      "objective": "Explain the V=IR relationship",
+      "narration": "Ohm's Law kehta hai ki V = I × R. Iska matlab hai Voltage equals Current into Resistance. Agar I nikalna ho, toh I = V/R hota hai. Maan lo V 10 hai aur R 5, toh I hoga 2 Amperes.",
+      "visual": {
+        "type": "equation",
+        "data": {
+          "steps": ["V = I × R", "I = V / R", "I = 10 / 5 = 2A"]
+        }
+      },
+      "citations": [
+        {
+          "documentId": "ncert-class9-science-ch12",
+          "pageOrSlide": 204,
+          "excerpt": "The potential difference, V, across the ends of a given metallic wire in an electric circuit is directly proportional to the current flowing through it."
+        }
+      ],
+      "durationSeconds": 60
+    },
+    {
+      "id": "scene-6-checkpoint",
+      "conceptId": "ohms-law-application",
+      "objective": "Test understanding of the relationship between current and resistance",
+      "narration": "Ab ek sawal. Agar voltage same rahe, aur hum resistance badha dein, toh current ka kya hoga?",
+      "visual": {
+        "type": "graph",
+        "data": {
+          "xAxis": "Resistance (R)",
+          "yAxis": "Current (I)",
+          "title": "Current vs Resistance at constant Voltage"
+        }
+      },
+      "citations": [
+        {
+          "documentId": "ncert-class9-science-ch12",
+          "pageOrSlide": 205,
+          "excerpt": "If the resistance is doubled the current gets halved."
+        }
+      ],
+      "durationSeconds": 30,
+      "checkpointId": "checkpoint-ohms-law-1"
+    },
+    {
+      "id": "scene-7-assessment",
+      "conceptId": "lesson-summary",
+      "objective": "Summary and next steps",
+      "narration": "Great job! Aaj humne seekha ki Current, Voltage, aur Resistance kaise ek dusre se jude hue hain Ohm's law ke through. Agli class mein hum circuits banayenge.",
+      "visual": {
+        "type": "concept_map",
+        "data": {
+          "nodes": ["Current (I)", "Voltage (V)", "Resistance (R)", "V = I × R"]
+        }
+      },
+      "citations": [
+        {
+          "documentId": "ncert-class9-science-ch12",
+          "pageOrSlide": 206,
+          "excerpt": "Summary of Ohm's Law."
+        }
+      ],
+      "durationSeconds": 30
+    }
+  ]
+}

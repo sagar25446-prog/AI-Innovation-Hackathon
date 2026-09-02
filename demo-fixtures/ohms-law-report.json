@@ -1,0 +1,26 @@
+{
+  "studentId": "student-demo",
+  "lessonId": "lesson-ohms-law-beginner-hinglish",
+  "score": 0.7,
+  "strongConcepts": ["current", "voltage"],
+  "weakConcepts": ["resistance-current-relationship"],
+  "misconceptions": [
+    {
+      "id": "direct-proportionality-confusion",
+      "status": "resolved",
+      "concept": "ohms-law"
+    }
+  ],
+  "revisionActions": [
+    "Practice more I=V/R calculations with different R values",
+    "Try the water pipe simulation"
+  ],
+  "nextTopic": {
+    "id": "series-parallel-circuits",
+    "title": "Series and Parallel Circuits"
+  },
+  "totalTimeSeconds": 1200,
+  "scenesCompleted": 7,
+  "checkpointsPassed": 1,
+  "checkpointsFailed": 1
+}

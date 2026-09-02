@@ -1,0 +1,15 @@
+{
+  "name": "@guruflow/visuals",
+  "version": "1.0.0",
+  "description": "Visual specification templates and renderers for GuruFlow",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}
