@@ -3,7 +3,8 @@ uvicorn[standard]==0.34.0
 pydantic==2.10.4
 httpx==0.28.1
 pytest==8.3.4
-google-generativeai==0.8.4
+google-genai==2.8.0
+python-dotenv==1.0.1
 edge-tts==7.0.2
 PyMuPDF==1.25.3
 python-multipart==0.0.20

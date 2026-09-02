@@ -60,14 +60,20 @@ export class GuruFlowClient {
     try {
       const health = await request('/health');
       this.mode = health.status === 'ok' ? 'api' : 'fixture';
+      this.gemini = Boolean(health && health.gemini);
     } catch {
       this.mode = 'fixture';
+      this.gemini = false;
     }
     return this.mode;
   }
 
   get isLive() {
     return this.mode === 'api';
+  }
+
+  get isGeminiLive() {
+    return this.isLive && this.gemini;
   }
 
   /* --------------------------------------------------------------- */

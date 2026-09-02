@@ -19,7 +19,12 @@ from typing import Any
 
 from services.ingestion import Material
 from services.planner.concepts import CONCEPTS_BY_ID
-from services.rag import best_citations, grounding_status, retrieve
+from services.rag import (
+    best_citations,
+    grounding_status,
+    index_sections,
+    retrieve,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -223,6 +228,13 @@ def plan_lesson(
     Tries Gemini Flash first (for richer, topic-agnostic content), falls back
     to the deterministic path if the LLM is unavailable or fails.
     """
+    # Vector-index the material so retrieval can use the persistent ChromaDB
+    # store (falls back silently to in-memory/keyword search if unavailable).
+    try:
+        index_sections(material.sections, material.document_id)
+    except Exception as exc:
+        logger.warning("Vector indexing skipped: %s", exc)
+
     llm_plan = _plan_lesson_llm(learner, material, topic, lesson_id)
     if llm_plan is not None:
         return llm_plan

@@ -15,8 +15,41 @@ python -m pip install -r apps/api/requirements.txt
 python -m uvicorn apps.api.main:app --port 8077
 ```
 
-Open <http://127.0.0.1:8077/> and press **Demo mode**. No API keys, no build
-step, no database. Tests: `python -m pytest apps/api/tests -q`.
+Open <http://127.0.0.1:8077/>. No build step, no database. Tests:
+`python -m pytest apps/api/tests -q`.
+
+### Enable the live Gemini brain (recommended for the demo)
+
+Lesson planning, answer evaluation and repair narration call **Gemini Flash
+(`gemini-2.5-flash`)** when a key is present, and fall back to the built-in
+deterministic engine otherwise. The top-right badge shows the live state.
+
+```bash
+# 1. Get a free key at https://aistudio.google.com/apikey
+# 2. Create apps/api/.env and add your key (never commit this file):
+#    GEMINI_API_KEY=your_key_here
+# 3. Restart, then the badge reads "live Gemini brain"
+python -m uvicorn apps.api.main:app --port 8077
+```
+
+Other optional keys (all independent and fall back cleanly):
+`GURUFLOW_TTS_API_KEY`, `GURUFLOW_AVATAR_API_KEY`, `GURUFLOW_LLM_API_KEY`.
+Voice always streams real audio via the server's `edge-tts` endpoint.
+
+### Enable full vector RAG
+
+Semantic retrieval (sentence-transformers embeddings + a persistent ChromaDB
+index, with exact page-cited sections) is implemented and opt-in. This engages
+real vector search on top of the fast keyword fallback:
+
+```bash
+# in apps/api/.env
+GURUFLOW_VECTOR_RAG=1
+```
+
+Requires `pip install sentence-transformers chromadb` (both are in
+`apps/api/requirements.txt`). When disabled (default), retrieval uses the
+instant keyword path so tests and the core demo stay fast.
 
 See [the integrated product](docs/INTEGRATED_PRODUCT.md) for the architecture,
 the flagship feature and the SWOT analysis.

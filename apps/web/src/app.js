@@ -61,10 +61,16 @@ function showScreen(name) {
 
 function setModeBadge() {
   const badge = $('mode-badge');
-  if (state.client.isLive) {
-    badge.textContent = 'live teacher brain';
+  if (state.client.isGeminiLive) {
+    badge.textContent = 'live Gemini brain';
     badge.className = 'badge badge-good';
-    badge.title = 'Lessons are planned and evaluated by the API';
+    badge.title = 'Planning and evaluation run live on Gemini Flash';
+  } else if (state.client.isLive) {
+    badge.textContent = 'live API (add GEMINI_API_KEY)';
+    badge.className = 'badge badge-warn';
+    badge.title =
+      'API connected, but no GEMINI_API_KEY set - using deterministic fallback. ' +
+      'Set apps/api/.env GEMINI_API_KEY=... to enable live Gemini.';
   } else {
     badge.textContent = 'fixture mode';
     badge.className = 'badge badge-warn';

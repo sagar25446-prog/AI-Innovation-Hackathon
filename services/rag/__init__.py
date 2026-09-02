@@ -1,17 +1,22 @@
 """Section-aware retrieval over ingested material.
 
-Supports two retrieval modes:
-1. Embedding-based (sentence-transformers + ChromaDB) - semantic search
-2. Keyword overlap (original) - fallback when embeddings are unavailable
+Supports three retrieval modes, tried in order:
+1. ChromaDB vector index (persistent, on-disk) - semantic search over indexed sections
+2. In-memory embedding (sentence-transformers) - semantic search without a DB
+3. Keyword overlap (original) - always available fallback
 
-The embedding path is tried first; keyword overlap is always available.
+`index_sections()` persists embeddings to a local ChromaDB store. `retrieve()`
+uses whichever path is available so the system never hard-fails.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import re
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Iterable
 
 logger = logging.getLogger(__name__)
@@ -24,10 +29,32 @@ _embedding_model = None
 _embeddings_checked = False
 _embeddings_available = False
 
+# ChromaDB persistent client / collection (lazy)
+_chroma_client = None
+_chroma_collection = None
+_chroma_checked = False
+_chroma_available = False
+
+DEFAULT_CHROMA_DIR = os.environ.get(
+    "GURUFLOW_CHROMA_DIR",
+    str(Path(tempfile.gettempdir()) / "guruflow_chroma"),
+)
+COLLECTION_NAME = "material_sections"
+
+# Vector RAG (sentence-transformers + ChromaDB) is opt-in via this flag. The
+# keyword path stays the fast, always-available default so tests and the core
+# demo run quickly. Set GURUFLOW_VECTOR_RAG=1 to engage full semantic search.
+VECTOR_RAG_ENABLED = (
+    os.environ.get("GURUFLOW_VECTOR_RAG", "0").strip().lower()
+    in ("1", "true", "yes", "on")
+)
+
 
 def _get_embedding_model():
-    """Lazy-load sentence-transformers model."""
+    """Lazy-load sentence-transformers model (only when vector RAG is enabled)."""
     global _embedding_model, _embeddings_checked, _embeddings_available
+    if not VECTOR_RAG_ENABLED:
+        return None
     if _embeddings_checked:
         return _embedding_model if _embeddings_available else None
     _embeddings_checked = True
@@ -41,6 +68,58 @@ def _get_embedding_model():
         logger.warning("Could not load sentence-transformers: %s. Using keyword fallback.", exc)
         _embeddings_available = False
         return None
+
+
+def _get_chroma_collection(persist_dir: str | None = None):
+    """Lazy-open the persistent ChromaDB collection (only when vector RAG is enabled)."""
+    global _chroma_client, _chroma_collection, _chroma_checked, _chroma_available
+    if not VECTOR_RAG_ENABLED:
+        return None
+    if _chroma_available and _chroma_collection is not None:
+        return _chroma_collection
+    if _chroma_checked:
+        return None
+    _chroma_checked = True
+    try:
+        import chromadb
+        _chroma_client = chromadb.PersistentClient(path=persist_dir or DEFAULT_CHROMA_DIR)
+        _chroma_collection = _chroma_client.get_or_create_collection(
+            name=COLLECTION_NAME,
+            metadata={"hnsw:space": "cosine"},
+        )
+        _chroma_available = True
+        logger.info("Opened ChromaDB vector index at %s", persist_dir or DEFAULT_CHROMA_DIR)
+        return _chroma_collection
+    except Exception as exc:
+        logger.warning("Could not initialise ChromaDB: %s. Using in-memory/keyword search.", exc)
+        return None
+
+
+def _upsert_sections(sections: list[dict[str, Any]], document_id: str) -> bool:
+    """Persist section embeddings into the ChromaDB index. Returns success."""
+    model = _get_embedding_model()
+    collection = _get_chroma_collection()
+    if collection is None or model is None or not sections:
+        return False
+    try:
+        ids: list[str] = []
+        docs: list[str] = []
+        metadatas: list[dict[str, Any]] = []
+        for i, section in enumerate(sections):
+            ids.append(f"{document_id}::sec-{i + 1}")
+            docs.append(section.get("excerpt", ""))
+            metadatas.append({
+                "document_id": document_id,
+                "page": int(section["pageOrSlide"]),
+                "heading": section.get("heading", ""),
+                "excerpt": section.get("excerpt", ""),
+            })
+        embeddings = model.encode(docs).tolist()
+        collection.upsert(ids=ids, embeddings=embeddings, documents=docs, metadatas=metadatas)
+        return True
+    except Exception as exc:
+        logger.warning("ChromaDB upsert failed: %s", exc)
+        return False
 
 
 @dataclass
@@ -78,6 +157,42 @@ def score_section(section: dict[str, Any], query_tokens: set[str]) -> float:
 
     weighted = (keyword_hits * 3) + (heading_hits * 2) + excerpt_hits
     return weighted / (len(query_tokens) * 3)
+
+
+def _chroma_search(
+    query: str,
+    document_id: str,
+    top_k: int = 2,
+) -> list[RetrievalResult]:
+    """Vector search against the persistent ChromaDB index, scoped to a document."""
+    collection = _get_chroma_collection()
+    if collection is None:
+        return []
+    try:
+        res = collection.query(
+            query_texts=[query],
+            n_results=top_k,
+            where={"document_id": document_id},
+        )
+        metadatas = (res.get("metadatas") or [[]])[0] or []
+        distances = (res.get("distances") or [[]])[0] or []
+        scored = []
+        for md, dist in zip(metadatas, distances):
+            # cosine distance -> similarity
+            score = round(1 - float(dist), 3)
+            scored.append(RetrievalResult(
+                citation={
+                    "documentId": md.get("document_id", document_id),
+                    "pageOrSlide": int(md.get("page", 0)),
+                    "excerpt": md.get("excerpt", ""),
+                    "heading": md.get("heading", ""),
+                },
+                score=score,
+            ))
+        return scored
+    except Exception as exc:
+        logger.warning("ChromaDB query failed: %s", exc)
+        return []
 
 
 def _embedding_search(
@@ -122,19 +237,49 @@ def _embedding_search(
         return []
 
 
+def index_sections(
+    sections: Iterable[dict[str, Any]],
+    document_id: str,
+    persist_dir: str | None = None,
+) -> bool:
+    """Index extracted sections into the persistent ChromaDB vector store.
+
+    Returns True if the sections were persisted to the vector index.
+    """
+    sections_list = list(sections)
+    if not sections_list:
+        return False
+    if persist_dir:
+        global _chroma_client, _chroma_collection, _chroma_checked, _chroma_available
+        _chroma_client = None
+        _chroma_collection = None
+        _chroma_checked = False
+        _chroma_available = False
+    return _upsert_sections(sections_list, document_id)
+
+
 def retrieve(
     query: str,
     sections: Iterable[dict[str, Any]],
     document_id: str,
     top_k: int = 2,
+    use_index: bool = True,
 ) -> list[RetrievalResult]:
     """Return the ``top_k`` best-matching sections as contract citations.
 
-    Tries embedding search first, falls back to keyword overlap.
+    Retrieval order:
+    1. ChromaDB vector index (if previously indexed and available)
+    2. In-memory embedding similarity
+    3. Keyword overlap (always available)
     """
     sections_list = list(sections)
     if not sections_list:
         return []
+
+    if use_index:
+        chroma_results = _chroma_search(query, document_id, top_k)
+        if chroma_results and chroma_results[0].score > 0.3:
+            return chroma_results
 
     embedding_results = _embedding_search(query, sections_list, document_id, top_k)
     if embedding_results and embedding_results[0].score > 0.3:

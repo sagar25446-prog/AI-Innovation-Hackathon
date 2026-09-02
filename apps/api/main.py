@@ -20,6 +20,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# Load optional .env (GEMINI_API_KEY, TTS/avatar keys) before any service
+# that reads os.environ at import time. Secrets are never committed.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+    load_dotenv(REPO_ROOT / ".env")
+except Exception:
+    pass
+
 from fastapi import FastAPI, HTTPException, UploadFile, File  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import FileResponse, Response  # noqa: E402
