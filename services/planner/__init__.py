@@ -6,16 +6,22 @@ happens on three axes required by the brief:
 * **order/breadth** - the time budget selects a tier of concepts
 * **depth** - the level appends extra explanation to each narration
 * **language** - english / hindi / hinglish narration, formulae unchanged
+
+When GEMINI_API_KEY is set, the planner uses Gemini Flash for richer,
+topic-agnostic planning while keeping the deterministic path as fallback.
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
 from services.ingestion import Material
 from services.planner.concepts import CONCEPTS_BY_ID
 from services.rag import best_citations, grounding_status, retrieve
+
+logger = logging.getLogger(__name__)
 
 # Concept order per time budget. Every tier keeps the required teaching order:
 # Current -> Voltage -> Resistance -> Ohm's Law -> checkpoint -> assessment.
@@ -105,13 +111,13 @@ def _compress(durations: list[int], budget_seconds: int) -> list[int]:
     return [max(MIN_SCENE_SECONDS, int(round(d * factor))) for d in durations]
 
 
-def plan_lesson(
+def _plan_lesson_deterministic(
     learner: dict[str, Any],
     material: Material,
-    topic: str = "Ohm's Law",
-    lesson_id: str | None = None,
+    topic: str,
+    lesson_id: str | None,
 ) -> dict[str, Any]:
-    """Build a contract-shaped ``LessonPlan`` for this learner and material."""
+    """Build a contract-shaped LessonPlan using the deterministic path."""
     level = learner["level"]
     language = learner["language"]
     available_minutes = int(learner["availableMinutes"])
@@ -138,8 +144,6 @@ def plan_lesson(
             "visual": concept["visual"],
             "citations": best_citations(results),
             "durationSeconds": durations[index],
-            # Additive, backward-compatible field: tells the UI whether this
-            # scene is backed by the material or by general knowledge.
             "groundingStatus": grounding_status(results),
         }
         if concept.get("checkpoint"):
@@ -150,10 +154,77 @@ def plan_lesson(
         "id": lesson_id or f"lesson-{uuid.uuid4().hex[:8]}",
         "learner": dict(learner),
         "scenes": scenes,
-        # Additive fields consumed by the UI; the contract permits extras.
         "topic": topic,
         "materialId": material.material_id,
         "documentTitle": material.title,
         "tier": tier_name,
         "estimatedSeconds": sum(durations),
     }
+
+
+def _plan_lesson_llm(
+    learner: dict[str, Any],
+    material: Material,
+    topic: str,
+    lesson_id: str | None,
+) -> dict[str, Any] | None:
+    """Try Gemini Flash to generate a richer, topic-agnostic plan.
+
+    Returns None if the LLM call fails so the caller can fall back.
+    """
+    try:
+        from services.llm import generate_plan
+        llm_result = generate_plan(
+            learner=learner,
+            material_sections=material.sections,
+            topic=topic,
+            document_id=material.document_id,
+        )
+        if not llm_result or not llm_result.get("scenes"):
+            return None
+
+        scenes = llm_result["scenes"]
+        for i, scene in enumerate(scenes):
+            if "id" not in scene:
+                scene["id"] = f"scene-{i + 1}-llm"
+            if "conceptId" not in scene:
+                scene["conceptId"] = f"concept-{i + 1}"
+            if "durationSeconds" not in scene:
+                scene["durationSeconds"] = 30
+            if "citations" not in scene:
+                scene["citations"] = []
+            if "visual" not in scene:
+                scene["visual"] = {"type": "concept_map", "data": {}}
+
+        total_seconds = sum(s.get("durationSeconds", 30) for s in scenes)
+        return {
+            "id": lesson_id or f"lesson-{uuid.uuid4().hex[:8]}",
+            "learner": dict(learner),
+            "scenes": scenes,
+            "topic": topic,
+            "materialId": material.material_id,
+            "documentTitle": material.title,
+            "tier": "llm-generated",
+            "estimatedSeconds": total_seconds,
+        }
+    except Exception as exc:
+        logger.warning("LLM plan generation failed, falling back to deterministic: %s", exc)
+        return None
+
+
+def plan_lesson(
+    learner: dict[str, Any],
+    material: Material,
+    topic: str = "Ohm's Law",
+    lesson_id: str | None = None,
+) -> dict[str, Any]:
+    """Build a contract-shaped ``LessonPlan`` for this learner and material.
+
+    Tries Gemini Flash first (for richer, topic-agnostic content), falls back
+    to the deterministic path if the LLM is unavailable or fails.
+    """
+    llm_plan = _plan_lesson_llm(learner, material, topic, lesson_id)
+    if llm_plan is not None:
+        return llm_plan
+
+    return _plan_lesson_deterministic(learner, material, topic, lesson_id)

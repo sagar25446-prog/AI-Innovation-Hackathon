@@ -31,6 +31,7 @@ const state = {
   timer: null,
   elapsed: 0,
   voiceOn: false,
+  uploadedFile: null,
 };
 
 const MCQ_OPTIONS = [
@@ -95,13 +96,28 @@ async function handleOnboarding(event) {
   try {
     const topic = $('topic').value.trim() || "Ohm's Law";
     const text = $('material-text').value.trim();
+    const fileInput = $('material-file');
+    const file = fileInput && fileInput.files && fileInput.files[0];
 
     state.learner = readLearner();
-    state.material = await state.client.createMaterial({
-      topic,
-      text: text || undefined,
-      title: text ? 'Pasted material' : undefined,
-    });
+
+    // Handle file upload
+    if (file) {
+      state.material = await state.client.uploadFile(file);
+    } else if (text) {
+      state.material = await state.client.createMaterial({
+        topic,
+        text,
+        title: 'Pasted material',
+      });
+    } else {
+      state.material = await state.client.createMaterial({
+        topic,
+        text: undefined,
+        title: undefined,
+      });
+    }
+
     state.plan = await state.client.createPlan({
       learner: state.learner,
       materialId: state.material.materialId,
@@ -264,6 +280,7 @@ function startScene() {
 
   // Render the scene through services/media, then drive captions from it.
   state.media.render(scene, state.plan.learner.language).then((mediaResult) => {
+    state.lastMediaResult = mediaResult;
     const status = $('media-status');
     if (mediaResult.status === 'degraded') {
       status.textContent = 'degraded - captions only';
@@ -304,7 +321,28 @@ function startScene() {
 function runCaptions(scene, captions) {
   const box = $('captions');
   const mouth = $('avatar-mouth');
+  const teacherVisual = $('teacher-visual');
   box.textContent = scene.narration;
+
+  // Check if media result has a video URL from an avatar provider
+  const mediaResult = state.lastMediaResult;
+  if (mediaResult && mediaResult.teacherPanel && mediaResult.teacherPanel.type === 'video' && mediaResult.teacherPanel.url) {
+    // Show avatar video
+    teacherVisual.innerHTML = '';
+    const video = document.createElement('video');
+    video.src = mediaResult.teacherPanel.url;
+    video.autoplay = true;
+    video.muted = false;
+    video.loop = false;
+    video.style.width = '100%';
+    video.style.height = '100%';
+    video.style.objectFit = 'cover';
+    video.style.borderRadius = 'var(--radius-sm)';
+    teacherVisual.appendChild(video);
+    mouth.classList.add('speaking');
+  } else {
+    mouth.classList.add('speaking');
+  }
 
   if (state.voiceOn) {
     state.media.tts.speak(scene.narration, state.plan.learner.language, {
@@ -314,7 +352,6 @@ function runCaptions(scene, captions) {
   }
 
   const duration = scene.durationSeconds || 20;
-  mouth.classList.add('speaking');
 
   state.timer = setInterval(() => {
     state.elapsed += 0.25;

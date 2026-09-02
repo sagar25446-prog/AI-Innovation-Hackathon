@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +20,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from fastapi import FastAPI, HTTPException  # noqa: E402
+from fastapi import FastAPI, HTTPException, UploadFile, File  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-from fastapi.responses import FileResponse  # noqa: E402
+from fastapi.responses import FileResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from apps.api.models import (  # noqa: E402
@@ -88,7 +89,13 @@ async def no_store_for_assets(request, call_next):
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"status": "ok", "service": "guruflow-teacher-brain", "mode": "deterministic"}
+    from services.llm import gemini_available
+    return {
+        "status": "ok",
+        "service": "guruflow-teacher-brain",
+        "mode": "deterministic" if not gemini_available() else "llm-enhanced",
+        "gemini": gemini_available(),
+    }
 
 
 @app.post("/materials")
@@ -281,6 +288,107 @@ def student_report(student_id: str) -> dict[str, Any]:
     if not sessions:
         raise HTTPException(status_code=404, detail="No lessons for this student")
     return _report_for_session(sessions[-1])
+
+
+# ---------------------------------------------------------------------------
+# Text-to-Speech
+# ---------------------------------------------------------------------------
+
+VOICE_MAP = {
+    "english": "en-IN-MadhurNeural",
+    "hindi": "hi-IN-SwaraNeural",
+    "hinglish": "hi-IN-MadhurNeural",
+}
+
+
+@app.post("/tts")
+async def text_to_speech(body: dict[str, str]) -> Response:
+    """Generate speech audio from text using edge-tts (free, no API key)."""
+    text = body.get("text", "").strip()
+    language = body.get("language", "hinglish")
+    if not text:
+        raise HTTPException(status_code=400, detail="Text is required")
+
+    voice = VOICE_MAP.get(language, VOICE_MAP["hinglish"])
+
+    try:
+        import edge_tts
+        communicate = edge_tts.Communicate(text, voice)
+        tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+        await communicate.save(tmp_path)
+        return FileResponse(tmp_path, media_type="audio/mpeg", filename="speech.mp3")
+    except ImportError:
+        raise HTTPException(status_code=503, detail="edge-tts not installed. Run: pip install edge-tts")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(exc)}")
+
+
+# ---------------------------------------------------------------------------
+# File upload for PDF parsing
+# ---------------------------------------------------------------------------
+
+
+@app.post("/upload")
+async def upload_material(file: UploadFile = File(...)) -> dict[str, Any]:
+    """Upload a PDF or text file and extract sections for lesson planning."""
+    content = await file.read()
+    filename = file.filename or "uploaded-file"
+
+    if filename.lower().endswith(".pdf"):
+        try:
+            import fitz
+            doc = fitz.open(stream=content, filetype="pdf")
+            sections = []
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                text = page.get_text()
+                if text.strip():
+                    lines = text.strip().splitlines()
+                    heading = lines[0].strip()[:80] if lines else f"Page {page_num + 1}"
+                    sections.append({
+                        "sectionId": f"upload-sec-{page_num + 1}",
+                        "pageOrSlide": page_num + 1,
+                        "heading": heading,
+                        "excerpt": text.strip()[:500],
+                        "keywords": _derive_upload_keywords(text),
+                    })
+            doc.close()
+            material_id = f"material-upload-{filename}"
+            return {
+                "materialId": material_id,
+                "documentId": material_id,
+                "title": filename,
+                "status": "ready",
+                "origin": "upload",
+                "sectionCount": len(sections),
+                "pageCount": len({s["pageOrSlide"] for s in sections}),
+                "sections": sections,
+            }
+        except ImportError:
+            raise HTTPException(status_code=503, detail="PyMuPDF not installed. Run: pip install PyMuPDF")
+    elif filename.lower().endswith((".txt", ".md")):
+        text = content.decode("utf-8", errors="replace")
+        material = ingest_text(text, title=filename)
+        return material.to_dict()
+    else:
+        raise HTTPException(status_code=400, detail="Only PDF and text files are supported")
+
+
+_STOPWORDS_UPLOAD = {
+    "the", "a", "an", "of", "to", "and", "is", "are", "in", "on", "for",
+    "it", "that", "this", "with", "as", "by", "be", "or", "from", "at",
+}
+
+def _derive_upload_keywords(text: str) -> list[str]:
+    import re
+    words = re.findall(r"[a-zA-Z]{3,}", text.lower())
+    seen: list[str] = []
+    for word in words:
+        if word not in _STOPWORDS_UPLOAD and word not in seen:
+            seen.append(word)
+    return seen[:12]
 
 
 # ---------------------------------------------------------------------------

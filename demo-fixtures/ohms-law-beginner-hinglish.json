@@ -4,24 +4,133 @@
     "level": "beginner",
     "language": "hinglish",
     "availableMinutes": 20,
-    "goal": "Understand Ohm's Law"
+    "goal": "Understand Ohm's Law and the relationship between Voltage, Current, and Resistance"
   },
   "scenes": [
     {
       "id": "scene-1-intro",
       "conceptId": "intro-electricity",
-      "objective": "Welcome and introduce electricity topic",
-      "narration": "Hello students! Aaj hum Electric Current aur Ohm's Law ke baare mein seekhenge. Yeh electricity ka basic rule hai.",
+      "objective": "Welcome and introduce electricity topic with core concepts overview",
+      "narration": "Hello students! Aaj hum Electric Current aur Ohm's Law ke baare mein seekhenge. Yeh electricity ka basic rule hai jo Voltage, Current aur Resistance ko jodta hai.",
       "visual": {
         "type": "concept_map",
         "data": {
-          "nodes": ["Electric Current", "Voltage", "Resistance", "Ohm's Law"]
+          "title": "Electricity & Ohm's Law Core Concepts",
+          "layout": {
+            "type": "hierarchical",
+            "orientation": "top-to-bottom",
+            "width": 600,
+            "height": 450,
+            "nodeSpacing": 100,
+            "levelSpacing": 120
+          },
+          "nodes": [
+            {
+              "id": "v",
+              "label": "Voltage (V)",
+              "category": "quantity",
+              "type": "concept",
+              "symbol": "V",
+              "unit": "Volts (V)",
+              "description": "Electric potential difference pushing charge through circuit",
+              "position": { "x": 150, "y": 100 },
+              "coordinates": { "x": 150, "y": 100 },
+              "level": 0,
+              "style": { "shape": "rectangle", "fill": "#DBEAFE", "stroke": "#2563EB", "color": "#1E40AF" }
+            },
+            {
+              "id": "r",
+              "label": "Resistance (R)",
+              "category": "quantity",
+              "type": "concept",
+              "symbol": "R",
+              "unit": "Ohms (Ω)",
+              "description": "Opposition to the flow of electric charge",
+              "position": { "x": 450, "y": 100 },
+              "coordinates": { "x": 450, "y": 100 },
+              "level": 0,
+              "style": { "shape": "rectangle", "fill": "#FEE2E2", "stroke": "#DC2626", "color": "#991B1B" }
+            },
+            {
+              "id": "ohm",
+              "label": "Ohm's Law (V = IR)",
+              "category": "law",
+              "type": "formula",
+              "symbol": "V=IR",
+              "description": "Fundamental linear relationship governing electric circuits",
+              "position": { "x": 300, "y": 220 },
+              "coordinates": { "x": 300, "y": 220 },
+              "level": 1,
+              "style": { "shape": "rounded", "fill": "#FEF3C7", "stroke": "#D97706", "color": "#92400E" }
+            },
+            {
+              "id": "i",
+              "label": "Current (I)",
+              "category": "quantity",
+              "type": "concept",
+              "symbol": "I",
+              "unit": "Amperes (A)",
+              "description": "Rate of electric charge flow (I = V/R)",
+              "position": { "x": 300, "y": 350 },
+              "coordinates": { "x": 300, "y": 350 },
+              "level": 2,
+              "style": { "shape": "rectangle", "fill": "#D1FAE5", "stroke": "#059669", "color": "#065F46" }
+            }
+          ],
+          "edges": [
+            {
+              "id": "edge-ohm-v",
+              "from": "ohm",
+              "to": "v",
+              "relationType": "defines",
+              "label": "defines",
+              "directional": true,
+              "style": { "stroke": "#64748B", "strokeWidth": 2 }
+            },
+            {
+              "id": "edge-ohm-r",
+              "from": "ohm",
+              "to": "r",
+              "relationType": "defines",
+              "label": "defines",
+              "directional": true,
+              "style": { "stroke": "#64748B", "strokeWidth": 2 }
+            },
+            {
+              "id": "edge-ohm-i",
+              "from": "ohm",
+              "to": "i",
+              "relationType": "defines",
+              "label": "defines",
+              "directional": true,
+              "style": { "stroke": "#64748B", "strokeWidth": 2 }
+            },
+            {
+              "id": "edge-v-i",
+              "from": "v",
+              "to": "i",
+              "relationType": "drives",
+              "label": "drives / pushes (+)",
+              "directional": true,
+              "style": { "stroke": "#2563EB", "strokeWidth": 2 }
+            },
+            {
+              "id": "edge-r-i",
+              "from": "r",
+              "to": "i",
+              "relationType": "opposes",
+              "label": "restricts / opposes (-)",
+              "directional": true,
+              "style": { "stroke": "#DC2626", "strokeWidth": 2, "strokeDasharray": "4 4" }
+            }
+          ]
         }
       },
       "citations": [
         {
           "documentId": "ncert-class9-science-ch12",
           "pageOrSlide": 200,
+          "heading": "12.1 Electric Current and Circuit",
           "excerpt": "Electric current is expressed by the amount of charge flowing through a particular area in unit time."
         }
       ],
@@ -30,12 +139,153 @@
     {
       "id": "scene-2-current",
       "conceptId": "electric-current",
-      "objective": "Explain what electric current is",
-      "narration": "Aaj hum Electric Current ke baare mein seekhenge. Current matlab electricity ka flow hai, bilkul paani ki nadiya ki tarah.",
+      "objective": "Explain what electric current is using a closed circuit model",
+      "narration": "Aaj hum Electric Current ke baare mein seekhenge. Current matlab electricity ka flow hai, bilkul paani ki nadiya ki tarah. Jab circuit closed hota hai, electrons flow karte hain.",
       "visual": {
         "type": "circuit",
         "data": {
-          "components": ["battery", "wire", "bulb"],
+          "title": "Closed Electric Circuit with Current Flow",
+          "components": [
+            {
+              "id": "bat-1",
+              "type": "battery",
+              "label": "V = 10V",
+              "value": 10,
+              "unit": "V",
+              "symbol": "V",
+              "position": { "x": 80, "y": 160 },
+              "coordinates": { "x": 80, "y": 160, "width": 60, "height": 100 },
+              "terminals": {
+                "positive": { "id": "positive", "name": "anode", "x": 80, "y": 160, "type": "anode" },
+                "negative": { "id": "negative", "name": "cathode", "x": 80, "y": 260, "type": "cathode" }
+              },
+              "ports": [
+                { "id": "anode", "name": "positive", "x": 80, "y": 160 },
+                { "id": "cathode", "name": "negative", "x": 80, "y": 260 }
+              ],
+              "state": "active",
+              "description": "DC Voltage Source providing electromotive force"
+            },
+            {
+              "id": "sw-1",
+              "type": "switch",
+              "label": "Switch (Closed)",
+              "state": "closed",
+              "position": { "x": 220, "y": 70 },
+              "coordinates": { "x": 220, "y": 70, "width": 60, "height": 30 },
+              "terminals": {
+                "terminal_a": { "id": "terminal_a", "name": "inlet", "x": 220, "y": 80, "type": "terminal_a" },
+                "terminal_b": { "id": "terminal_b", "name": "outlet", "x": 280, "y": 80, "type": "terminal_b" }
+              },
+              "ports": [
+                { "id": "terminal_a", "name": "terminal_a", "x": 220, "y": 80 },
+                { "id": "terminal_b", "name": "terminal_b", "x": 280, "y": 80 }
+              ],
+              "description": "Single-pole switch completing the circuit loop"
+            },
+            {
+              "id": "bulb-1",
+              "type": "bulb",
+              "label": "Glowing Lamp (Load)",
+              "position": { "x": 380, "y": 65 },
+              "coordinates": { "x": 380, "y": 65, "width": 60, "height": 60 },
+              "terminals": {
+                "terminal_a": { "id": "terminal_a", "name": "in", "x": 380, "y": 80, "type": "terminal_a" },
+                "terminal_b": { "id": "terminal_b", "name": "out", "x": 440, "y": 80, "type": "terminal_b" }
+              },
+              "ports": [
+                { "id": "terminal_a", "name": "in", "x": 380, "y": 80 },
+                { "id": "terminal_b", "name": "out", "x": 440, "y": 80 }
+              ],
+              "state": "glowing",
+              "description": "Incandescent load converting electric energy into light"
+            },
+            {
+              "id": "amm-1",
+              "type": "ammeter",
+              "label": "I = 2A",
+              "value": 2,
+              "unit": "A",
+              "symbol": "I",
+              "position": { "x": 460, "y": 180 },
+              "coordinates": { "x": 460, "y": 180, "width": 60, "height": 60 },
+              "terminals": {
+                "anode": { "id": "anode", "name": "in", "x": 490, "y": 180, "type": "anode" },
+                "cathode": { "id": "cathode", "name": "out", "x": 490, "y": 240, "type": "cathode" }
+              },
+              "ports": [
+                { "id": "anode", "name": "positive", "x": 490, "y": 180 },
+                { "id": "cathode", "name": "negative", "x": 490, "y": 240 }
+              ],
+              "state": "measuring",
+              "description": "Ammeter measuring rate of electric charge flow"
+            }
+          ],
+          "connections": [
+            {
+              "id": "wire-1",
+              "from": "bat-1",
+              "fromComponent": "bat-1",
+              "fromPort": "positive",
+              "to": "sw-1",
+              "toComponent": "sw-1",
+              "toPort": "terminal_a",
+              "waypoints": [[80, 160], [80, 80], [220, 80]],
+              "path": "M 80 160 L 80 80 L 220 80"
+            },
+            {
+              "id": "wire-2",
+              "from": "sw-1",
+              "fromComponent": "sw-1",
+              "fromPort": "terminal_b",
+              "to": "bulb-1",
+              "toComponent": "bulb-1",
+              "toPort": "terminal_a",
+              "waypoints": [[280, 80], [380, 80]],
+              "path": "M 280 80 L 380 80"
+            },
+            {
+              "id": "wire-3",
+              "from": "bulb-1",
+              "fromComponent": "bulb-1",
+              "fromPort": "terminal_b",
+              "to": "amm-1",
+              "toComponent": "amm-1",
+              "toPort": "anode",
+              "waypoints": [[440, 80], [490, 80], [490, 180]],
+              "path": "M 440 80 L 490 80 L 490 180"
+            },
+            {
+              "id": "wire-4",
+              "from": "amm-1",
+              "fromComponent": "amm-1",
+              "fromPort": "cathode",
+              "to": "bat-1",
+              "toComponent": "bat-1",
+              "toPort": "negative",
+              "waypoints": [[490, 240], [490, 340], [80, 340], [80, 260]],
+              "path": "M 490 240 L 490 340 L 80 340 L 80 260"
+            }
+          ],
+          "currentFlow": {
+            "direction": "clockwise",
+            "active": true,
+            "speed": "normal",
+            "intensity": "2A",
+            "carrier": "conventional_current",
+            "path": [
+              [80, 160], [80, 80], [220, 80], [280, 80],
+              [380, 80], [440, 80], [490, 80], [490, 180],
+              [490, 240], [490, 340], [80, 340], [80, 260]
+            ]
+          },
+          "layout": { "width": 580, "height": 400, "viewBox": "0 0 580 400", "padding": 24, "gridSize": 20 },
+          "dimensions": { "width": 580, "height": 400, "viewBox": "0 0 580 400" },
+          "viewBox": "0 0 580 400",
+          "annotations": [
+            "Conventional current flows from positive (+) to negative (-) terminal.",
+            "Electric current is the continuous rate of charge flow: I = Q / t."
+          ],
           "highlight": "current-flow"
         }
       },
@@ -43,6 +293,7 @@
         {
           "documentId": "ncert-class9-science-ch12",
           "pageOrSlide": 201,
+          "heading": "12.1 Electric Current and Circuit",
           "excerpt": "A continuous and closed path of an electric current is called an electric circuit."
         }
       ],
@@ -51,19 +302,145 @@
     {
       "id": "scene-3-voltage",
       "conceptId": "voltage",
-      "objective": "Explain what voltage is",
-      "narration": "Voltage ko samjho jaise water pressure - jitna zyada pressure, utna zyada current flow hoga. Yeh electrons ko push karta hai.",
+      "objective": "Explain what voltage is as the electrical pressure pushing charge",
+      "narration": "Voltage ko samjho jaise water pressure - jitna zyada pressure, utna zyada current flow hoga. Yeh electrons ko push karta hai circuit ke through.",
       "visual": {
         "type": "circuit",
         "data": {
-          "components": ["battery", "wire", "bulb"],
-          "highlight": "battery"
+          "title": "Voltage Source: Potential Difference Across Circuit",
+          "components": [
+            {
+              "id": "bat-1",
+              "type": "battery",
+              "label": "V = 10V",
+              "value": 10,
+              "unit": "V",
+              "symbol": "V",
+              "position": { "x": 80, "y": 160 },
+              "coordinates": { "x": 80, "y": 160, "width": 60, "height": 100 },
+              "terminals": {
+                "positive": { "id": "positive", "name": "anode", "x": 80, "y": 160, "type": "anode" },
+                "negative": { "id": "negative", "name": "cathode", "x": 80, "y": 260, "type": "cathode" }
+              },
+              "ports": [
+                { "id": "anode", "name": "positive", "x": 80, "y": 160 },
+                { "id": "cathode", "name": "negative", "x": 80, "y": 260 }
+              ],
+              "state": "active",
+              "description": "DC Voltage Source providing electrical potential difference"
+            },
+            {
+              "id": "volt-1",
+              "type": "voltmeter",
+              "label": "V = 10V",
+              "value": 10,
+              "unit": "V",
+              "symbol": "V",
+              "position": { "x": 80, "y": 40 },
+              "coordinates": { "x": 80, "y": 40, "width": 60, "height": 60 },
+              "terminals": {
+                "positive": { "id": "positive", "name": "high", "x": 60, "y": 70, "type": "anode" },
+                "negative": { "id": "negative", "name": "low", "x": 140, "y": 70, "type": "cathode" }
+              },
+              "ports": [
+                { "id": "positive", "name": "high", "x": 60, "y": 70 },
+                { "id": "negative", "name": "low", "x": 140, "y": 70 }
+              ],
+              "state": "measuring",
+              "description": "Voltmeter measuring potential difference across battery"
+            },
+            {
+              "id": "sw-1",
+              "type": "switch",
+              "label": "Switch (Closed)",
+              "state": "closed",
+              "position": { "x": 240, "y": 70 },
+              "coordinates": { "x": 240, "y": 70, "width": 60, "height": 30 },
+              "terminals": {
+                "terminal_a": { "id": "terminal_a", "name": "inlet", "x": 240, "y": 80, "type": "terminal_a" },
+                "terminal_b": { "id": "terminal_b", "name": "outlet", "x": 300, "y": 80, "type": "terminal_b" }
+              },
+              "ports": [
+                { "id": "terminal_a", "name": "terminal_a", "x": 240, "y": 80 },
+                { "id": "terminal_b", "name": "terminal_b", "x": 300, "y": 80 }
+              ],
+              "description": "Closed switch"
+            },
+            {
+              "id": "bulb-1",
+              "type": "bulb",
+              "label": "Lamp (Load)",
+              "position": { "x": 390, "y": 65 },
+              "coordinates": { "x": 390, "y": 65, "width": 60, "height": 60 },
+              "terminals": {
+                "terminal_a": { "id": "terminal_a", "name": "in", "x": 390, "y": 80, "type": "terminal_a" },
+                "terminal_b": { "id": "terminal_b", "name": "out", "x": 450, "y": 80, "type": "terminal_b" }
+              },
+              "ports": [
+                { "id": "terminal_a", "name": "in", "x": 390, "y": 80 },
+                { "id": "terminal_b", "name": "out", "x": 450, "y": 80 }
+              ],
+              "state": "glowing",
+              "description": "Lamp load powered by voltage source"
+            }
+          ],
+          "connections": [
+            {
+              "id": "wire-1",
+              "from": "bat-1",
+              "fromComponent": "bat-1",
+              "fromPort": "positive",
+              "to": "sw-1",
+              "toComponent": "sw-1",
+              "toPort": "terminal_a",
+              "waypoints": [[80, 160], [80, 80], [240, 80]],
+              "path": "M 80 160 L 80 80 L 240 80"
+            },
+            {
+              "id": "wire-2",
+              "from": "sw-1",
+              "fromComponent": "sw-1",
+              "fromPort": "terminal_b",
+              "to": "bulb-1",
+              "toComponent": "bulb-1",
+              "toPort": "terminal_a",
+              "waypoints": [[300, 80], [390, 80]],
+              "path": "M 300 80 L 390 80"
+            },
+            {
+              "id": "wire-3",
+              "from": "bulb-1",
+              "fromComponent": "bulb-1",
+              "fromPort": "terminal_b",
+              "to": "bat-1",
+              "toComponent": "bat-1",
+              "toPort": "negative",
+              "waypoints": [[450, 80], [490, 80], [490, 340], [80, 340], [80, 260]],
+              "path": "M 450 80 L 490 80 L 490 340 L 80 340 L 80 260"
+            }
+          ],
+          "currentFlow": {
+            "direction": "clockwise",
+            "active": true,
+            "speed": "normal",
+            "intensity": "2A",
+            "carrier": "conventional_current"
+          },
+          "layout": { "width": 580, "height": 400, "viewBox": "0 0 580 400", "padding": 24, "gridSize": 20 },
+          "dimensions": { "width": 580, "height": 400, "viewBox": "0 0 580 400" },
+          "viewBox": "0 0 580 400",
+          "annotations": [
+            "Voltage (V = 10V) represents the electrical pressure or work done per unit charge (V = W / Q).",
+            "Higher voltage creates a stronger push on electrons."
+          ],
+          "highlight": "bat-1"
         }
       },
       "citations": [
         {
           "documentId": "ncert-class9-science-ch12",
           "pageOrSlide": 202,
+          "heading": "12.2 Electric Potential and Potential Difference",
           "excerpt": "Electric potential difference between two points in an electric circuit carrying some current as the work done to move a unit charge."
         }
       ],
@@ -72,19 +449,158 @@
     {
       "id": "scene-4-resistance",
       "conceptId": "resistance",
-      "objective": "Explain what resistance is",
-      "narration": "Aur Resistance kya hai? Yeh flow ko rokata hai, jaise speed breaker. Zyada resistance matlab kam current.",
+      "objective": "Explain what resistance is as opposition to electric current",
+      "narration": "Aur Resistance kya hai? Yeh flow ko rokata hai, jaise speed breaker. Zyada resistance matlab kam current flow hoga circuit mein.",
       "visual": {
         "type": "circuit",
         "data": {
-          "components": ["battery", "wire", "resistor"],
-          "highlight": "resistor"
+          "title": "Resistance: Opposing the Flow of Electric Charge",
+          "components": [
+            {
+              "id": "bat-1",
+              "type": "battery",
+              "label": "V = 10V",
+              "value": 10,
+              "unit": "V",
+              "symbol": "V",
+              "position": { "x": 80, "y": 160 },
+              "coordinates": { "x": 80, "y": 160, "width": 60, "height": 100 },
+              "terminals": {
+                "positive": { "id": "positive", "name": "anode", "x": 80, "y": 160, "type": "anode" },
+                "negative": { "id": "negative", "name": "cathode", "x": 80, "y": 260, "type": "cathode" }
+              },
+              "ports": [
+                { "id": "anode", "name": "positive", "x": 80, "y": 160 },
+                { "id": "cathode", "name": "negative", "x": 80, "y": 260 }
+              ],
+              "state": "active",
+              "description": "DC Voltage Source"
+            },
+            {
+              "id": "sw-1",
+              "type": "switch",
+              "label": "Switch (Closed)",
+              "state": "closed",
+              "position": { "x": 220, "y": 70 },
+              "coordinates": { "x": 220, "y": 70, "width": 60, "height": 30 },
+              "terminals": {
+                "terminal_a": { "id": "terminal_a", "name": "inlet", "x": 220, "y": 80, "type": "terminal_a" },
+                "terminal_b": { "id": "terminal_b", "name": "outlet", "x": 280, "y": 80, "type": "terminal_b" }
+              },
+              "ports": [
+                { "id": "terminal_a", "name": "terminal_a", "x": 220, "y": 80 },
+                { "id": "terminal_b", "name": "terminal_b", "x": 280, "y": 80 }
+              ]
+            },
+            {
+              "id": "res-1",
+              "type": "resistor",
+              "label": "R = 5Ω",
+              "value": 5,
+              "unit": "Ω",
+              "symbol": "R",
+              "position": { "x": 380, "y": 65 },
+              "coordinates": { "x": 380, "y": 65, "width": 80, "height": 35 },
+              "terminals": {
+                "terminal_a": { "id": "terminal_a", "name": "inlet", "x": 380, "y": 80, "type": "terminal_a" },
+                "terminal_b": { "id": "terminal_b", "name": "outlet", "x": 460, "y": 80, "type": "terminal_b" }
+              },
+              "ports": [
+                { "id": "terminal_a", "name": "terminal_a", "x": 380, "y": 80 },
+                { "id": "terminal_b", "name": "terminal_b", "x": 460, "y": 80 }
+              ],
+              "powerDissipation": "20.0W",
+              "description": "Resistor opposing charge flow"
+            },
+            {
+              "id": "amm-1",
+              "type": "ammeter",
+              "label": "I = 2A",
+              "value": 2,
+              "unit": "A",
+              "symbol": "I",
+              "position": { "x": 460, "y": 180 },
+              "coordinates": { "x": 460, "y": 180, "width": 60, "height": 60 },
+              "terminals": {
+                "anode": { "id": "anode", "name": "in", "x": 490, "y": 180, "type": "anode" },
+                "cathode": { "id": "cathode", "name": "out", "x": 490, "y": 240, "type": "cathode" }
+              },
+              "ports": [
+                { "id": "anode", "name": "positive", "x": 490, "y": 180 },
+                { "id": "cathode", "name": "negative", "x": 490, "y": 240 }
+              ],
+              "state": "measuring",
+              "description": "Ammeter measuring current through resistor"
+            }
+          ],
+          "connections": [
+            {
+              "id": "wire-1",
+              "from": "bat-1",
+              "fromComponent": "bat-1",
+              "fromPort": "positive",
+              "to": "sw-1",
+              "toComponent": "sw-1",
+              "toPort": "terminal_a",
+              "waypoints": [[80, 160], [80, 80], [220, 80]],
+              "path": "M 80 160 L 80 80 L 220 80"
+            },
+            {
+              "id": "wire-2",
+              "from": "sw-1",
+              "fromComponent": "sw-1",
+              "fromPort": "terminal_b",
+              "to": "res-1",
+              "toComponent": "res-1",
+              "toPort": "terminal_a",
+              "waypoints": [[280, 80], [380, 80]],
+              "path": "M 280 80 L 380 80"
+            },
+            {
+              "id": "wire-3",
+              "from": "res-1",
+              "fromComponent": "res-1",
+              "fromPort": "terminal_b",
+              "to": "amm-1",
+              "toComponent": "amm-1",
+              "toPort": "anode",
+              "waypoints": [[460, 80], [490, 80], [490, 180]],
+              "path": "M 460 80 L 490 80 L 490 180"
+            },
+            {
+              "id": "wire-4",
+              "from": "amm-1",
+              "fromComponent": "amm-1",
+              "fromPort": "cathode",
+              "to": "bat-1",
+              "toComponent": "bat-1",
+              "toPort": "negative",
+              "waypoints": [[490, 240], [490, 340], [80, 340], [80, 260]],
+              "path": "M 490 240 L 490 340 L 80 340 L 80 260"
+            }
+          ],
+          "currentFlow": {
+            "direction": "clockwise",
+            "active": true,
+            "speed": "normal",
+            "intensity": "2A",
+            "carrier": "conventional_current"
+          },
+          "layout": { "width": 580, "height": 400, "viewBox": "0 0 580 400", "padding": 24, "gridSize": 20 },
+          "dimensions": { "width": 580, "height": 400, "viewBox": "0 0 580 400" },
+          "viewBox": "0 0 580 400",
+          "annotations": [
+            "Resistance (R = 5Ω) restricts the flow of electric charge.",
+            "Doubling resistance with fixed voltage will halve the current."
+          ],
+          "highlight": "res-1"
         }
       },
       "citations": [
         {
           "documentId": "ncert-class9-science-ch12",
           "pageOrSlide": 204,
+          "heading": "12.3 Ohm's Law",
           "excerpt": "It is the property of a conductor to resist the flow of charges through it."
         }
       ],
@@ -93,62 +609,290 @@
     {
       "id": "scene-5-ohms-law",
       "conceptId": "ohms-law",
-      "objective": "Explain the V=IR relationship",
-      "narration": "Ohm's Law kehta hai ki V = I × R. Iska matlab hai Voltage equals Current into Resistance. Agar I nikalna ho, toh I = V/R hota hai. Maan lo V 10 hai aur R 5, toh I hoga 2 Amperes.",
+      "objective": "Explain the mathematical relationship V = IR and solve for I = V/R",
+      "narration": "Ohm's Law kehta hai ki V = I × R. Iska matlab hai Voltage equals Current into Resistance. Agar I nikalna ho, toh I = V/R hota hai. Maan lo V 10V hai aur R 5Ω, toh I hoga 2A.",
       "visual": {
         "type": "equation",
         "data": {
-          "steps": ["V = I × R", "I = V / R", "I = 10 / 5 = 2A"]
+          "title": "Deriving Current using Ohm's Law",
+          "format": "katex",
+          "steps": [
+            {
+              "stepIndex": 0,
+              "id": "step-1",
+              "title": "Ohm's Law Standard Formula",
+              "label": "Ohm's Law Standard Formula",
+              "rawExpression": "V = I * R",
+              "expression": "V = I \\cdot R",
+              "latex": "V = I \\cdot R",
+              "explanation": "Potential difference (V) equals Current (I) multiplied by Resistance (R).",
+              "caption": "Potential difference (V) equals Current (I) multiplied by Resistance (R).",
+              "highlightedTerms": ["V", "I", "R"],
+              "highlight": false
+            },
+            {
+              "stepIndex": 1,
+              "id": "step-2",
+              "title": "Rearrange Solving for Current (I)",
+              "label": "Rearrange Solving for Current (I)",
+              "rawExpression": "I = V / R",
+              "expression": "I = \\frac{V}{R}",
+              "latex": "I = \\frac{V}{R}",
+              "explanation": "Dividing both sides by Resistance (R) isolates Current (I).",
+              "caption": "Dividing both sides by Resistance (R) isolates Current (I).",
+              "highlightedTerms": ["I", "V", "R"],
+              "highlight": true,
+              "misconceptionAnnotation": {
+                "flag": "inverse_proportionality",
+                "note": "Resistance (R) is in the denominator. As R increases at constant V, I decreases."
+              }
+            },
+            {
+              "stepIndex": 2,
+              "id": "step-3",
+              "title": "Substitute Given Values",
+              "label": "Substitute Given Values",
+              "rawExpression": "I = 10 / 5 = 2A",
+              "expression": "I = \\frac{10\\text{ V}}{5\\,\\Omega} = 2\\text{ A}",
+              "latex": "I = \\frac{10\\text{ V}}{5\\,\\Omega} = 2\\text{ A}",
+              "explanation": "Substitute V = 10V and R = 5Ω to compute I = 2A.",
+              "caption": "Substitute V = 10V and R = 5Ω to compute I = 2A.",
+              "highlightedTerms": ["I", "2A"],
+              "highlight": false
+            }
+          ],
+          "variables": {
+            "V": { "symbol": "V", "name": "Voltage (Potential Difference)", "unit": "Volts (V)", "role": "Driving force", "value": "10V" },
+            "I": { "symbol": "I", "name": "Current (Charge Flow Rate)", "unit": "Amperes (A)", "role": "Rate of charge flow", "value": "2A" },
+            "R": { "symbol": "R", "name": "Resistance (Flow Opposition)", "unit": "Ohms (Ω)", "role": "Opposition to charge flow", "value": "5Ω" }
+          },
+          "variableAnnotations": {
+            "V": { "symbol": "V", "name": "Voltage (Potential Difference)", "unit": "Volts (V)", "role": "Driving force", "value": "10V" },
+            "I": { "symbol": "I", "name": "Current (Charge Flow Rate)", "unit": "Amperes (A)", "role": "Rate of charge flow", "value": "2A" },
+            "R": { "symbol": "R", "name": "Resistance (Flow Opposition)", "unit": "Ohms (Ω)", "role": "Opposition to charge flow", "value": "5Ω" }
+          },
+          "misconceptionAnnotations": {
+            "topic": "direct_vs_inverse_proportionality",
+            "confusion": "Current increases when resistance increases",
+            "correction": "At constant voltage, current is inversely proportional to resistance: I = V/R",
+            "rule": "As R increases in denominator, I decreases"
+          },
+          "highlight": "step-2",
+          "highlightStepId": "step-2"
         }
       },
       "citations": [
         {
           "documentId": "ncert-class9-science-ch12",
           "pageOrSlide": 204,
-          "excerpt": "The potential difference, V, across the ends of a given metallic wire in an electric circuit is directly proportional to the current flowing through it."
+          "heading": "12.3 Ohm's Law",
+          "excerpt": "The potential difference, V, across the ends of a given metallic wire in an electric circuit is directly proportional to the current flowing through it, provided its temperature remains the same."
         }
       ],
       "durationSeconds": 60
     },
     {
-      "id": "scene-6-checkpoint",
+      "id": "scene-6-graph",
       "conceptId": "ohms-law-application",
-      "objective": "Test understanding of the relationship between current and resistance",
-      "narration": "Ab ek sawal. Agar voltage same rahe, aur hum resistance badha dein, toh current ka kya hoga?",
+      "objective": "Demonstrate current vs resistance inverse proportionality graphically and prompt checkpoint",
+      "narration": "Ab dekhte hain graph par. Agar voltage 10V par fixed rahe, aur hum resistance badhate jayein (5Ω se 10Ω), toh current 2A se ghatkar 1A ho jata hai. Ab aap batayein: resistance badhane par current ka kya hoga?",
       "visual": {
         "type": "graph",
         "data": {
-          "xAxis": "Resistance (R)",
-          "yAxis": "Current (I)",
-          "title": "Current vs Resistance at constant Voltage"
+          "title": "Current (I) vs Resistance (R) at Constant Voltage (V = 10V)",
+          "graphType": "inverse_proportionality",
+          "xAxis": {
+            "label": "Resistance (R)",
+            "symbol": "R",
+            "unit": "Ω",
+            "min": 0,
+            "max": 20,
+            "tickInterval": 2,
+            "ticks": [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20],
+            "scale": "linear"
+          },
+          "yAxis": {
+            "label": "Current (I)",
+            "symbol": "I",
+            "unit": "A",
+            "min": 0,
+            "max": 12,
+            "tickInterval": 2,
+            "ticks": [0, 2, 4, 6, 8, 10, 12],
+            "scale": "linear"
+          },
+          "gridlines": {
+            "show": true,
+            "xStep": 2,
+            "yStep": 2,
+            "color": "#E2E8F0",
+            "strokeDasharray": "3 3"
+          },
+          "series": [
+            {
+              "id": "series-i-vs-r",
+              "name": "I = 10 / R",
+              "label": "Current I = 10/R",
+              "curveType": "inverse_proportionality",
+              "type": "curve",
+              "formula": "I = 10 / R",
+              "mathematicalFormula": "I = \\frac{10}{R}",
+              "color": "#3B82F6",
+              "strokeWidth": 3,
+              "points": [
+                { "x": 1, "y": 10 },
+                { "x": 1.5, "y": 6.667 },
+                { "x": 2, "y": 5 },
+                { "x": 2.5, "y": 4 },
+                { "x": 3, "y": 3.333 },
+                { "x": 4, "y": 2.5 },
+                { "x": 5, "y": 2 },
+                { "x": 6, "y": 1.667 },
+                { "x": 8, "y": 1.25 },
+                { "x": 10, "y": 1 },
+                { "x": 12, "y": 0.833 },
+                { "x": 14, "y": 0.714 },
+                { "x": 15, "y": 0.667 },
+                { "x": 16, "y": 0.625 },
+                { "x": 18, "y": 0.556 },
+                { "x": 20, "y": 0.5 }
+              ]
+            }
+          ],
+          "points": [
+            { "x": 1, "y": 10 },
+            { "x": 1.5, "y": 6.667 },
+            { "x": 2, "y": 5 },
+            { "x": 2.5, "y": 4 },
+            { "x": 3, "y": 3.333 },
+            { "x": 4, "y": 2.5 },
+            { "x": 5, "y": 2 },
+            { "x": 6, "y": 1.667 },
+            { "x": 8, "y": 1.25 },
+            { "x": 10, "y": 1 },
+            { "x": 12, "y": 0.833 },
+            { "x": 14, "y": 0.714 },
+            { "x": 15, "y": 0.667 },
+            { "x": 16, "y": 0.625 },
+            { "x": 18, "y": 0.556 },
+            { "x": 20, "y": 0.5 }
+          ],
+          "highlightedOperatingPoints": [
+            { "x": 5, "y": 2, "label": "R = 5Ω, I = 2A", "description": "Base operating point", "color": "#10B981" },
+            { "x": 10, "y": 1, "label": "R = 10Ω, I = 1A", "description": "Doubled resistance halves current", "color": "#EF4444" }
+          ],
+          "highlightPoints": [
+            { "x": 5, "y": 2, "label": "R = 5Ω, I = 2A", "color": "#10B981" },
+            { "x": 10, "y": 1, "label": "R = 10Ω, I = 1A", "color": "#EF4444" }
+          ],
+          "annotations": [
+            {
+              "x": 10,
+              "y": 1,
+              "text": "As Resistance (R) increases, Current (I) decreases (Inverse Proportionality)",
+              "trend": "descending",
+              "position": "top-right"
+            }
+          ],
+          "formula": "I = 10 / R"
         }
       },
       "citations": [
         {
           "documentId": "ncert-class9-science-ch12",
           "pageOrSlide": 205,
+          "heading": "12.3 Ohm's Law",
           "excerpt": "If the resistance is doubled the current gets halved."
         }
       ],
-      "durationSeconds": 30,
+      "durationSeconds": 45,
       "checkpointId": "checkpoint-ohms-law-1"
     },
     {
       "id": "scene-7-assessment",
       "conceptId": "lesson-summary",
-      "objective": "Summary and next steps",
-      "narration": "Great job! Aaj humne seekha ki Current, Voltage, aur Resistance kaise ek dusre se jude hue hain Ohm's law ke through. Agli class mein hum circuits banayenge.",
+      "objective": "Lesson summary and concept network consolidation",
+      "narration": "Great job! Aaj humne seekha ki Current, Voltage, aur Resistance kaise ek dusre se jude hue hain Ohm's Law (V = IR) ke through. Voltage flow ko drive karta hai, resistance oppose karta hai, aur current dono ka result hai.",
       "visual": {
         "type": "concept_map",
         "data": {
-          "nodes": ["Current (I)", "Voltage (V)", "Resistance (R)", "V = I × R"]
+          "title": "Electricity & Ohm's Law Summary Network",
+          "layout": {
+            "type": "hierarchical",
+            "orientation": "top-to-bottom",
+            "width": 600,
+            "height": 450,
+            "nodeSpacing": 100,
+            "levelSpacing": 120
+          },
+          "nodes": [
+            {
+              "id": "v",
+              "label": "Voltage (V)",
+              "category": "quantity",
+              "type": "concept",
+              "symbol": "V",
+              "unit": "Volts (V)",
+              "description": "Potential difference driving charge flow",
+              "position": { "x": 150, "y": 100 },
+              "coordinates": { "x": 150, "y": 100 },
+              "level": 0,
+              "style": { "shape": "rectangle", "fill": "#DBEAFE", "stroke": "#2563EB", "color": "#1E40AF" }
+            },
+            {
+              "id": "r",
+              "label": "Resistance (R)",
+              "category": "quantity",
+              "type": "concept",
+              "symbol": "R",
+              "unit": "Ohms (Ω)",
+              "description": "Opposition to electric charge flow",
+              "position": { "x": 450, "y": 100 },
+              "coordinates": { "x": 450, "y": 100 },
+              "level": 0,
+              "style": { "shape": "rectangle", "fill": "#FEE2E2", "stroke": "#DC2626", "color": "#991B1B" }
+            },
+            {
+              "id": "ohm",
+              "label": "Ohm's Law (V = IR)",
+              "category": "law",
+              "type": "formula",
+              "symbol": "V=IR",
+              "description": "Linear governing relationship: V = I × R and I = V / R",
+              "position": { "x": 300, "y": 220 },
+              "coordinates": { "x": 300, "y": 220 },
+              "level": 1,
+              "style": { "shape": "rounded", "fill": "#FEF3C7", "stroke": "#D97706", "color": "#92400E" }
+            },
+            {
+              "id": "i",
+              "label": "Current (I)",
+              "category": "quantity",
+              "type": "concept",
+              "symbol": "I",
+              "unit": "Amperes (A)",
+              "description": "Resulting rate of electric charge flow",
+              "position": { "x": 300, "y": 350 },
+              "coordinates": { "x": 300, "y": 350 },
+              "level": 2,
+              "style": { "shape": "rectangle", "fill": "#D1FAE5", "stroke": "#059669", "color": "#065F46" }
+            }
+          ],
+          "edges": [
+            { "id": "edge-ohm-v", "from": "ohm", "to": "v", "relationType": "defines", "label": "defines", "directional": true, "style": { "stroke": "#64748B", "strokeWidth": 2 } },
+            { "id": "edge-ohm-r", "from": "ohm", "to": "r", "relationType": "defines", "label": "defines", "directional": true, "style": { "stroke": "#64748B", "strokeWidth": 2 } },
+            { "id": "edge-ohm-i", "from": "ohm", "to": "i", "relationType": "defines", "label": "defines", "directional": true, "style": { "stroke": "#64748B", "strokeWidth": 2 } },
+            { "id": "edge-v-i", "from": "v", "to": "i", "relationType": "drives", "label": "drives / pushes (+)", "directional": true, "style": { "stroke": "#2563EB", "strokeWidth": 2 } },
+            { "id": "edge-r-i", "from": "r", "to": "i", "relationType": "opposes", "label": "restricts / opposes (-)", "directional": true, "style": { "stroke": "#DC2626", "strokeWidth": 2, "strokeDasharray": "4 4" } }
+          ]
         }
       },
       "citations": [
         {
           "documentId": "ncert-class9-science-ch12",
           "pageOrSlide": 206,
-          "excerpt": "Summary of Ohm's Law."
+          "heading": "12.3 Ohm's Law Summary",
+          "excerpt": "Ohm's law gives the relationship between potential difference and current: V = IR."
         }
       ],
       "durationSeconds": 30

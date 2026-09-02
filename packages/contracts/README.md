@@ -1,62 +1,154 @@
 # @guruflow/contracts
 
-This package contains the JSON Schema definitions and validation logic for the GuruFlow AI teacher platform.
+This package contains the authoritative JSON Schema definitions (JSON Schema Draft-07), validation engine, and contract interfaces for the GuruFlow source-grounded multilingual AI teacher platform.
+
+---
+
+## Contract-First Architecture
+
+GuruFlow follows a strict **contract-first integration** model:
+1. `lesson-contract.schema.json` is the single source of truth for all data exchange.
+2. The AI Teacher Brain (Planner, RAG, Evaluator) produces validated JSON conforming to these definitions.
+3. The Media and Visual layers render standard `Scene` and `VisualSpec` payloads independently of backend provider implementations.
+4. The Frontend consumes validated `LessonPlan`, `Scene`, `EvaluationResult`, and `LearningReport` data.
+
+---
 
 ## Schema Definitions
 
-The schema is defined in `lesson-contract.schema.json`. It includes the following entities:
+All definitions reside in `lesson-contract.schema.json`.
 
-### `LearnerProfile`
-Represents the learner's preferences and constraints.
-- `level`: beginner, intermediate, or advanced.
-- `language`: english, hindi, or hinglish.
-- `availableMinutes`: Available time for the lesson.
-- `goal`: What the learner wants to achieve.
+### 1. `LearnerProfile`
+Represents the learner's preferences, pacing, and pedagogical goals.
+- `level` *(enum)*: `"beginner" | "intermediate" | "advanced"`
+- `language` *(enum)*: `"english" | "hindi" | "hinglish"`
+- `availableMinutes` *(integer, 1..10080)*: Available time duration for the lesson.
+- `goal` *(string, minLength: 1)*: Target learning objective.
+- `priorKnowledge` *(string, optional)*: Summary of learner's prior knowledge.
 
-### `SourceCitation`
-Used to trace AI generated content back to original source materials.
-- `documentId`: ID of the source material.
-- `pageOrSlide`: Page or slide number.
-- `excerpt`: The exact excerpt from the source.
+### 2. `SourceCitation`
+Grounds generated teaching explanations in original source materials (e.g. NCERT textbooks).
+- `documentId` *(string, minLength: 1)*: Identifier of the source document (e.g. `"ncert-class9-science-ch12"`).
+- `pageOrSlide` *(integer, $\ge 1$)*: Page or slide number in the source material.
+- `heading` *(string, optional)*: Section or subsection header.
+- `excerpt` *(string, minLength: 1)*: Verbatim text excerpt from the cited source.
 
-### `VisualSpec`
-Specifies what visual element should be displayed alongside the narration.
-- `type`: One of circuit, equation, graph, timeline, diagram, code_trace, concept_map.
-- `data`: An object containing visual specific data.
+### 3. `VisualSpec`
+Defines the interactive visual element displayed alongside teacher narration.
+- `type` *(enum)*: `"circuit" | "equation" | "graph" | "timeline" | "diagram" | "code_trace" | "concept_map"`
+- `data` *(object)*: Type-specific visual payload.
 
-### `Scene`
-A single block of instruction in a lesson.
-- `id`: Unique identifier for the scene.
-- `conceptId`: The concept being taught.
-- `objective`: The goal of this specific scene.
-- `narration`: The script the AI teacher will speak.
-- `visual`: A `VisualSpec` object.
-- `citations`: An array of `SourceCitation` objects.
-- `durationSeconds`: Estimated time to complete the scene.
-- `checkpointId`: (Optional) ID of an assessment checkpoint if this scene includes one.
+#### Supported Visual Data Schemas:
+- **`circuit`**: Includes `components` (batteries, resistors, switches, bulbs, ammeters with positions, coordinates, terminals, ports), `connections` (with waypoints and SVG path data), `currentFlow` (direction, active flag, speed, carrier path), `layout`, `annotations`, and `highlight`.
+- **`equation`**: KaTeX-compatible LaTeX steps (`steps` array with `stepIndex`, `expression`, `latex`, `explanation`, `highlightedTerms`), `variables` metadata, and `misconceptionAnnotations`.
+- **`graph`**: Cartesian graph specification including `xAxis` (label, unit, min, max, ticks), `yAxis` (label, unit, min, max, ticks), `gridlines`, `series` curves, `points`, `highlightedOperatingPoints`, and `annotations`.
+- **`concept_map`**: Hierarchical knowledge graph containing `nodes` (id, label, category, type, symbol, position, level, style) and `edges` (id, from, to, relationType, label, directional, style).
+- **`diagram`**: Hydraulic analogy and composite diagrams with `elements`, `flowParticles`, `comparisonMappingTable`, and `scenarioStates`.
+- **`timeline`** & **`code_trace`**: Structured sequential stage progressions.
 
-### `LessonPlan`
-A complete lesson tailored for a learner.
-- `id`: Unique identifier for the lesson.
-- `learner`: A `LearnerProfile` object.
-- `scenes`: An array of `Scene` objects.
+### 4. `Scene`
+A discrete instructional unit within a lesson plan.
+- `id` *(string, minLength: 1)*: Unique scene identifier (e.g. `"scene-1-intro"`, `"scene-repair-ohms-law"`).
+- `conceptId` *(string, minLength: 1)*: Concept being taught (e.g. `"ohms-law"`).
+- `objective` *(string, minLength: 1)*: Pedagogical goal of the scene.
+- `narration` *(string, minLength: 1)*: Spoken script for teacher avatar and TTS.
+- `visual` *(VisualSpec)*: Associated visual specification.
+- `citations` *(SourceCitation[])*: Source citations grounding the scene narration.
+- `durationSeconds` *(integer, $\ge 1$)*: Estimated duration of the scene.
+- `checkpointId` *(string, optional)*: ID of assessment checkpoint if scene prompts a question.
 
-### `EvaluationResult`
-The result of evaluating a learner's answer at a checkpoint.
-- `correct`: Whether the answer was correct.
-- `mastery`: A score between 0 and 1 indicating mastery level.
-- `misconception`: (Optional) Identified misconception if the answer was wrong.
-- `feedback`: Explanatory feedback for the learner.
-- `nextAction`: What to do next (advance, repair, retry).
-- `repairScene`: (Optional) A `Scene` object to teach the corrected concept if `nextAction` is `repair`.
+### 5. `LessonPlan`
+A complete structured curriculum tailored for a learner profile.
+- `id` *(string, minLength: 1)*: Unique lesson identifier.
+- `learner` *(LearnerProfile)*: Target learner profile.
+- `scenes` *(Scene[], minItems: 1)*: Sequence of instruction scenes.
 
-## Usage Rules
-- All AI generated content must adhere to these schemas to be processed by the media and UI layers.
-- Checkpoint evaluations must return a valid `EvaluationResult`.
-- Repairs must be full `Scene` objects, capable of being rendered independently.
+### 6. `EvaluationResult`
+Evaluation output produced by the diagnostic evaluator following a learner's checkpoint response.
+- `correct` *(boolean)*: Whether the learner answered correctly.
+- `mastery` *(number, 0.0..1.0)*: Estimated concept mastery score.
+- `misconception` *(string, optional)*: Diagnosed misconception (e.g. `"direct-proportionality confusion"`).
+- `feedback` *(string, minLength: 1)*: Supportive, non-punitive pedagogical feedback.
+- `nextAction` *(enum)*: `"advance" | "repair" | "retry"`
+- `repairScene` *(Scene, optional)*: 20–45s remediation scene provided when `nextAction === "repair"`.
+
+### 7. `LearningReport`
+Post-lesson diagnostic report summarizing progress, mastery, and next steps.
+- `studentId` *(string)*: Learner identifier.
+- `lessonId` *(string)*: Completed lesson identifier.
+- `score` *(number, 0.0..1.0)*: Overall lesson score.
+- `strongConcepts` *(string[])*: Mastered concepts.
+- `weakConcepts` *(string[])*: Concepts requiring further revision.
+- `misconceptions` *(object[])*: Diagnostic log of identified and resolved misconceptions.
+- `revisionActions` *(string[])*: Actionable next steps.
+- `nextTopic` *(object)*: Suggested follow-up module.
+- `totalTimeSeconds` *(integer)*: Total time spent.
+- `scenesCompleted` *(integer)*: Count of completed scenes.
+- `checkpointsPassed` *(integer)*: Checkpoints answered correctly.
+- `checkpointsFailed` *(integer)*: Checkpoints requiring remediation.
+
+### 8. `CheckpointSubmission`
+Represents a student's answer submission at an interactive checkpoint.
+- `lessonId` *(string, optional)*: Lesson identifier.
+- `checkpointId` *(string, minLength: 1)*: Checkpoint identifier.
+- `studentAnswer` *(string, minLength: 1)*: Learner's response text.
+- `expectedEvaluation` *(EvaluationResult, optional)*: Expected evaluation outcome in demo fixtures.
+
+---
+
+## Validation Tooling
+
+### CLI Usage
+
+Validate demo fixtures or any JSON files:
+```bash
+# Validate all demo fixtures
+node packages/contracts/validate.js demo-fixtures/*.json
+
+# Or using npm script
+npm run validate
+```
+
+### Programmatic API
+
+```javascript
+const {
+  validateData,
+  validateFixture,
+  validateAgainstSchema,
+  inferType,
+  getSchema,
+  getDefinitions
+} = require('@guruflow/contracts');
+
+// Validate a JSON file directly from disk
+const result = validateFixture('path/to/fixture.json');
+console.log(result.valid); // true / false
+console.log(result.type);  // 'LessonPlan' | 'Scene' | 'EvaluationResult' | etc.
+console.log(result.errors); // Array of validation error strings
+
+// Validate a JavaScript object against inferred or explicit schema type
+const evalResult = validateData(myObject, 'EvaluationResult');
+if (!evalResult.valid) {
+  console.error('Validation errors:', evalResult.errors);
+}
+```
+
+---
+
+## Unit Testing
+
+Run contract validation unit tests:
+```bash
+npm test
+# or: node --test test/*.test.js
+```
+
+---
 
 ## Versioning Policy
-This package follows SemVer. 
-- Major version bumps for breaking changes to the schema.
-- Minor version bumps for non-breaking additions (e.g., new visual types).
-- Patch version bumps for documentation or validation script updates.
+
+This package follows **Semantic Versioning (SemVer)**:
+- **Major**: Breaking changes to schema definitions (e.g. changing required fields or renaming types).
+- **Minor**: Backward-compatible schema additions (e.g. new optional fields, new visual types).
+- **Patch**: Documentation updates, validator optimizations, and test additions.

@@ -1,6 +1,6 @@
 {
   "correct": true,
-  "mastery": 0.75,
-  "feedback": "Bilkul sahi! Resistance badhne se current kam hota hai kyunki I = V/R.",
+  "mastery": 0.85,
+  "feedback": "Bilkul sahi! Resistance badhne se current kam hota hai kyunki I = V/R at constant voltage.",
   "nextAction": "advance"
 }
