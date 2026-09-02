@@ -41,6 +41,14 @@ def make_plan(client, **learner_overrides):
     return response.json()
 
 
+def _import_fails(module_name: str) -> bool:
+    try:
+        __import__(module_name)
+        return False
+    except ImportError:
+        return True
+
+
 def test_health(client):
     response = client.get("/health")
     assert response.status_code == 200
@@ -219,3 +227,78 @@ def test_student_report_endpoint(client):
     report = client.get("/students/student-demo/report")
     assert report.status_code == 200
     assert report.json()["studentId"] == "student-demo"
+
+
+@pytest.mark.skipif(
+    _import_fails("docx"), reason="python-docx not installed"
+)
+def test_docx_upload_parses_sections(client):
+    from docx import Document
+    from io import BytesIO
+
+    doc = Document()
+    doc.add_heading("Resistance Fundamentals", level=1)
+    doc.add_paragraph(
+        "Resistance opposes the flow of current and is measured in ohms."
+    )
+    doc.add_heading("Ohm's Law", level=1)
+    doc.add_paragraph("Ohm's law says V equals I times R.")
+    buf = BytesIO()
+    doc.save(buf)
+
+    res = client.post(
+        "/upload",
+        files={"file": ("material.docx", buf.getvalue(),
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["sectionCount"] == 2
+    assert body["sections"][0]["heading"] == "Resistance Fundamentals"
+    assert body["sections"][0]["pageOrSlide"] == 1
+    assert body["sections"][0]["sectionId"] == "upload-sec-1"
+    assert "resistance" in body["sections"][0]["keywords"]
+
+
+@pytest.mark.skipif(
+    _import_fails("pptx"), reason="python-pptx not installed"
+)
+def test_pptx_upload_parses_sections(client):
+    from pptx import Presentation
+    from io import BytesIO
+
+    prs = Presentation()
+    st = prs.slides.add_slide(prs.slide_layouts[1])
+    st.shapes.title.text = "Current"
+    st.placeholders[1].text = "Current is the flow of charge in amperes."
+
+    buf = BytesIO()
+    prs.save(buf)
+
+    res = client.post(
+        "/upload",
+        files={"file": ("deck.pptx", buf.getvalue(),
+                        "application/vnd.openxmlformats-officedocument.presentationml.presentation")},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["sectionCount"] == 1
+    assert body["sections"][0]["pageOrSlide"] == 1
+    assert body["sections"][0]["heading"] == "Current"
+
+
+def test_unsupported_upload_format_rejected(client):
+    res = client.post(
+        "/upload",
+        files={"file": ("notes.xlsx", b"not a supported doc", "application/octet-stream")},
+    )
+    assert res.status_code == 400
+
+
+def test_diagram_renders_real_png_for_each_visual_type(client):
+    for vtype in ("circuit", "equation", "graph", "concept_map", "water_pipe_analogy"):
+        res = client.post("/diagram", json={"type": vtype, "title": vtype})
+        assert res.status_code == 200, res.text
+        assert res.headers["content-type"].startswith("image/png")
+        assert res.content[:4] == b"\x89PNG"
+        assert len(res.content) > 1000

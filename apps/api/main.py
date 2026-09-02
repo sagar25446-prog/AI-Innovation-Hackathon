@@ -341,48 +341,202 @@ async def text_to_speech(body: dict[str, str]) -> Response:
 
 @app.post("/upload")
 async def upload_material(file: UploadFile = File(...)) -> dict[str, Any]:
-    """Upload a PDF or text file and extract sections for lesson planning."""
+    """Upload a PDF, DOCX, PPTX or text file and extract sections.
+
+    Sections are the contract-shaped ``material.sections`` used by retrieval,
+    so every supported format feeds the same citation/grounding pipeline.
+    """
     content = await file.read()
     filename = file.filename or "uploaded-file"
+    lower_name = filename.lower()
 
-    if filename.lower().endswith(".pdf"):
-        try:
-            import fitz
-            doc = fitz.open(stream=content, filetype="pdf")
-            sections = []
-            for page_num in range(len(doc)):
-                page = doc[page_num]
-                text = page.get_text()
-                if text.strip():
-                    lines = text.strip().splitlines()
-                    heading = lines[0].strip()[:80] if lines else f"Page {page_num + 1}"
-                    sections.append({
-                        "sectionId": f"upload-sec-{page_num + 1}",
-                        "pageOrSlide": page_num + 1,
-                        "heading": heading,
-                        "excerpt": text.strip()[:500],
-                        "keywords": _derive_upload_keywords(text),
-                    })
-            doc.close()
-            material_id = f"material-upload-{filename}"
-            return {
-                "materialId": material_id,
-                "documentId": material_id,
-                "title": filename,
-                "status": "ready",
-                "origin": "upload",
-                "sectionCount": len(sections),
-                "pageCount": len({s["pageOrSlide"] for s in sections}),
-                "sections": sections,
-            }
-        except ImportError:
-            raise HTTPException(status_code=503, detail="PyMuPDF not installed. Run: pip install PyMuPDF")
-    elif filename.lower().endswith((".txt", ".md")):
+    if lower_name.endswith(".pdf"):
+        sections = _parse_pdf(content)
+        return _upload_response(filename, sections, "upload")
+    elif lower_name.endswith(".docx"):
+        sections = _parse_docx(content)
+        return _upload_response(filename, sections, "upload")
+    elif lower_name.endswith((".ppt", ".pptx")):
+        sections = _parse_pptx(content)
+        return _upload_response(filename, sections, "upload")
+    elif lower_name.endswith((".txt", ".md")):
         text = content.decode("utf-8", errors="replace")
         material = ingest_text(text, title=filename)
         return material.to_dict()
     else:
-        raise HTTPException(status_code=400, detail="Only PDF and text files are supported")
+        raise HTTPException(
+            status_code=400,
+            detail="Supported formats: PDF, DOCX, PPTX, TXT, MD",
+        )
+
+
+@app.post("/diagram")
+async def render_diagram(body: dict[str, Any]) -> Response:
+    """Render a scene's visual spec as a real PNG diagram.
+
+    Accepts ``{"type": "circuit"|"equation"|"graph"|"concept_map"|...}`` plus
+    optional ``title``/``nodes`` data. Returns image/png bytes so the visual a
+    scene calls for is genuinely rendered, not just described.
+    """
+    from apps.api.diagram import render_diagram as _render
+
+    try:
+        png = _render(body, size=(640, 360))
+    except Exception as exc:  # renderer is defensive, but never let a 500 leak raw
+        raise HTTPException(status_code=500, detail=f"Diagram render failed: {exc}")
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={},
+    )
+
+
+def _upload_response(
+    filename: str,
+    sections: list[dict[str, Any]],
+    origin: str,
+) -> dict[str, Any]:
+    """Shape parsed sections into the contract material response."""
+    material_id = f"material-upload-{filename}"
+    return {
+        "materialId": material_id,
+        "documentId": material_id,
+        "title": filename,
+        "status": "ready",
+        "origin": origin,
+        "sectionCount": len(sections),
+        "pageCount": len({s["pageOrSlide"] for s in sections}),
+        "sections": sections,
+    }
+
+
+def _parse_pdf(content: bytes) -> list[dict[str, Any]]:
+    """Extract one section per non-empty PDF page using PyMuPDF."""
+    try:
+        import fitz
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="PyMuPDF not installed. Run: pip install PyMuPDF",
+        )
+    doc = fitz.open(stream=content, filetype="pdf")
+    sections: list[dict[str, Any]] = []
+    try:
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            text = page.get_text()
+            if text.strip():
+                lines = text.strip().splitlines()
+                heading = lines[0].strip()[:80] if lines else f"Page {page_num + 1}"
+                sections.append(_make_section(
+                    index=page_num,
+                    page_or_slide=page_num + 1,
+                    heading=heading,
+                    text=text,
+                ))
+    finally:
+        doc.close()
+    return sections
+
+
+def _parse_docx(content: bytes) -> list[dict[str, Any]]:
+    """Extract document sections from a Word .docx file using python-docx.
+
+    Splits on heading-style paragraphs so structural headings become distinct
+    sections with page numbers approximated by paragraph index (docs have no
+    hard pagination, so we number by block order instead).
+    """
+    try:
+        from io import BytesIO
+        from docx import Document
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="python-docx not installed. Run: pip install python-docx",
+        )
+    document = Document(BytesIO(content))
+    sections: list[dict[str, Any]] = []
+    current_heading: str | None = None
+    current_blocks: list[str] = []
+
+    def flush() -> None:
+        nonlocal current_heading, current_blocks
+        text = "\n".join(current_blocks).strip()
+        if text:
+            sections.append(_make_section(
+                index=len(sections),
+                page_or_slide=len(sections) + 1,
+                heading=current_heading or f"Section {len(sections) + 1}",
+                text=text,
+            ))
+        current_heading = None
+        current_blocks = []
+
+    for para in document.paragraphs:
+        style = (para.style.name or "").lower()
+        text = para.text.strip()
+        if not text:
+            continue
+        if style.startswith("heading") or style == "title":
+            flush()
+            current_heading = text
+        else:
+            current_blocks.append(text)
+    flush()
+    return sections
+
+
+def _parse_pptx(content: bytes) -> list[dict[str, Any]]:
+    """Extract one section per slide from a PowerPoint .pptx file."""
+    try:
+        from io import BytesIO
+        from pptx import Presentation
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="python-pptx not installed. Run: pip install python-pptx",
+        )
+    prs = Presentation(BytesIO(content))
+    sections: list[dict[str, Any]] = []
+    for slide_index, slide in enumerate(prs.slides):
+        blocks: list[str] = []
+        for shape in slide.shapes:
+            if getattr(shape, "has_text_frame", False):
+                for para in shape.text_frame.paragraphs:
+                    text = "".join(run.text for run in para.runs).strip()
+                    if text:
+                        blocks.append(text)
+            elif getattr(shape, "has_table", False):
+                for row in shape.table.rows:
+                    cells = [c.text.strip() for c in row.cells]
+                    if any(cells):
+                        blocks.append(" | ".join(cells))
+        text = "\n".join(blocks).strip()
+        if text:
+            heading = blocks[0][:80] if blocks else f"Slide {slide_index + 1}"
+            sections.append(_make_section(
+                index=slide_index,
+                page_or_slide=slide_index + 1,
+                heading=heading,
+                text=text,
+            ))
+    return sections
+
+
+def _make_section(
+    index: int,
+    page_or_slide: int,
+    heading: str,
+    text: str,
+) -> dict[str, Any]:
+    """Build a contract-shaped section with derived keywords."""
+    return {
+        "sectionId": f"upload-sec-{index + 1}",
+        "pageOrSlide": page_or_slide,
+        "heading": heading,
+        "excerpt": text[:500],
+        "keywords": _derive_upload_keywords(text),
+    }
 
 
 _STOPWORDS_UPLOAD = {

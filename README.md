@@ -51,6 +51,29 @@ Requires `pip install sentence-transformers chromadb` (both are in
 `apps/api/requirements.txt`). When disabled (default), retrieval uses the
 instant keyword path so tests and the core demo stay fast.
 
+### Multi-format material upload and real visual rendering
+
+`POST /upload` extracts page/slide-numbered citation sections from **PDF,
+DOCX, PPTX, TXT and MD**, so your own textbook chapter or slide deck feeds the
+same grounding pipeline as the bundled corpus:
+
+```bash
+curl -F "file=@notes.pptx" http://127.0.0.1:8077/upload
+```
+
+`POST /diagram` renders a scene's visual spec (`circuit`, `equation`, `graph`,
+`concept_map`, `water_pipe_analogy`) as a real **PNG** via matplotlib, so the
+visual a scene calls for is genuinely generated, not just described:
+
+```bash
+curl -X POST http://127.0.0.1:8077/diagram \
+  -H "Content-Type: application/json" \
+  -d '{"type":"circuit","title":"V = I × R"}' -o diagram.png
+```
+
+Backed by `python-docx`, `python-pptx` and `matplotlib` (all pinned in
+`apps/api/requirements.txt`).
+
 See [the integrated product](docs/INTEGRATED_PRODUCT.md) for the architecture,
 the flagship feature and the SWOT analysis.
 
