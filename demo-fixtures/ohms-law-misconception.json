@@ -1,0 +1,12 @@
+{
+  "lessonId": "lesson-ohms-law-demo",
+  "checkpointId": "checkpoint-resistance",
+  "studentAnswer": "Current increases when resistance increases.",
+  "expectedEvaluation": {
+    "correct": false,
+    "mastery": 0.35,
+    "misconception": "direct-proportionality confusion",
+    "feedback": "Almost. With voltage fixed, current is I = V/R, so increasing resistance reduces current.",
+    "nextAction": "repair"
+  }
+}
