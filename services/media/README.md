@@ -1,33 +1,65 @@
 # @guruflow/media
 
-This package contains the media and contracts layer for GuruFlow, an AI teacher platform. It provides provider-neutral interfaces and mock implementations for Text-to-Speech (TTS), Avatar generation, and Scene Rendering.
+Media rendering engine, mock provider infrastructure, fallback guarantees, and deterministic scene caching for GuruFlow AI teacher platform.
 
-## Structure
+## Architecture
 
-- `src/interfaces.js` - Defines the JSDoc interfaces for `TTSProvider`, `AvatarProvider`, `SceneRenderer`, and the `MediaResult` type.
-- `src/mock-tts-provider.js` - Mock implementation of `TTSProvider`. Generates mock audio URLs and estimates duration based on text length.
-- `src/mock-avatar-provider.js` - Mock implementation of `AvatarProvider`. Generates mock video and thumbnail URLs.
-- `src/scene-renderer.js` - Orchestrates the generation of scenes, producing a complete `MediaResult`. Contains fallback logic in case of provider failure.
-- `src/provider-factory.js` - Factory functions to instantiate providers.
+This package provides provider-neutral interfaces, resilient multimodal rendering, latency/error simulation, and instant deterministic replay caching for GuruFlow lessons.
+
+### Key Modules
+
+- `src/interfaces.js` — Core JSDoc definitions and abstract classes (`TTSProvider`, `AvatarProvider`, `SceneRenderer`, `MediaResult`).
+- `src/mock-tts-provider.js` — Configurable mock TTS provider with word-count based duration calculation, MD5 URL hashing, latency simulation (`latencyMs > 2000ms`), and failure toggling (`shouldFail: true`).
+- `src/mock-avatar-provider.js` — Configurable mock avatar video provider with thumbnail generation, duration propagation, latency simulation, and error simulation.
+- `src/scene-renderer.js` — `DefaultSceneRenderer` implementing full multimodal rendering with robust null safety, visual canvas pass-through (`circuit`, `equation`, `graph`, `concept_map`, `diagram`), and graceful fallback guarantees:
+  - **TTS Failure**: Falls back to text-only captions (`audio.fallback: true`, `audio.url: null`, `status: 'degraded'`).
+  - **Avatar Failure**: Falls back to static teacher image placeholder (`video.fallback: true`, `video.thumbnailUrl: 'assets/teacher-placeholder.svg'`, `teacherPanel.type: 'image'`, `status: 'degraded'`).
+  - **Dual Failure**: Zero-crash guarantee returning valid `MediaResult` with intact captions and placeholder visual.
+- `src/scene-cache.js` — In-memory deterministic descriptor cache (`SceneCache`) with alias normalization, mutation protection, and pre-seeded demo entries.
+- `src/cached-descriptors.js` — Pre-generated instant descriptors for demo teaching scenes (`scene-1-intro`, `scene-2-voltage`, `scene-3-resistance`, `scene-5-ohms-law`), advance scene (`scene-advance-circuits`), and 3-in-1 compound repair scene (`scene-repair-ohms-law`) across English, Hindi, and Hinglish with strict mathematical formula invariance ($V=IR$, $I=V/R$, $10/5=2\text{A}$).
+- `src/provider-factory.js` — Factory helpers for creating providers, cache, and renderer instances.
 
 ## Usage
 
 ```javascript
-import { createTTSProvider, createAvatarProvider, createSceneRenderer } from '@guruflow/media';
+import {
+  createTTSProvider,
+  createAvatarProvider,
+  createSceneRenderer,
+  SceneCache,
+  getCachedDescriptor
+} from '@guruflow/media';
 
-const tts = createTTSProvider();
+// 1. Instant Cached Lookup
+const cachedScene = getCachedDescriptor('scene-5-ohms-law', 'hinglish');
+console.log(cachedScene.status); // 'ready'
+
+// 2. Dynamic Scene Rendering with Providers & Fallbacks
+const tts = createTTSProvider({ latencyMs: 50 });
 const avatar = createAvatarProvider();
 const renderer = createSceneRenderer();
 
 const scene = {
-  narration: { text: "Hello, world!", language: "english" },
-  visual: { type: "equation", data: { eq: "E=mc^2" } }
+  id: "scene-5-ohms-law",
+  narration: "Ohm's Law states that V = I * R.",
+  visual: {
+    type: "circuit",
+    data: { voltage: "10V", resistance: "5Ω", current: "2A" }
+  },
+  durationSeconds: 20
 };
 
-renderer.renderScene(scene, { ttsProvider: tts, avatarProvider: avatar })
-  .then(result => console.log(result));
+const mediaResult = await renderer.renderScene(scene, {
+  ttsProvider: tts,
+  avatarProvider: avatar,
+  language: 'hinglish'
+});
 ```
 
-## Adding Real Providers
+## Running Tests
 
-To add a real provider (e.g., ElevenLabs for TTS, HeyGen for Avatars), create a new class implementing the respective interface and update `createTTSProvider` or `createAvatarProvider` in `provider-factory.js` to return the real implementation when API keys are provided in the configuration.
+Run the built-in Node.js test runner:
+
+```bash
+node --test test/*.test.js
+```

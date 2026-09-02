@@ -1,0 +1,11 @@
+{
+  "lessonId": "lesson-ohms-law-beginner-hinglish",
+  "checkpointId": "checkpoint-ohms-law-1",
+  "studentAnswer": "Current decreases because I = V/R when resistance increases at constant voltage.",
+  "expectedEvaluation": {
+    "correct": true,
+    "mastery": 0.85,
+    "feedback": "Bilkul sahi! Voltage constant hone par I = V/R hota hai, isliye resistance badhne par current kam ho jata hai.",
+    "nextAction": "advance"
+  }
+}
