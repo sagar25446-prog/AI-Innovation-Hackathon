@@ -1,0 +1,28 @@
+{
+  "correct": false,
+  "mastery": 0.35,
+  "misconception": "direct-proportionality confusion",
+  "feedback": "Lagbhag sahi! Lekin yaad rakho - voltage fixed hone par, I = V/R, toh resistance badhne se current KAM hota hai, zyada nahi.",
+  "nextAction": "repair",
+  "repairScene": {
+    "id": "scene-repair-ohms-law",
+    "conceptId": "ohms-law",
+    "objective": "Correct direct-proportionality misconception",
+    "narration": "Socho ek pipe mein paani beh raha hai. Agar pipe ko narrow kar do (matlab resistance badhao), toh paani ka flow (matlab current) KAM hoga, zyada nahi! Isi tarah, I = V/R mein, jab R badhta hai toh I GHATTA hai.",
+    "visual": {
+      "type": "equation",
+      "data": {
+        "steps": ["I = V / R", "↑ Resistance = ↓ Current"],
+        "analogy": "water-pipe"
+      }
+    },
+    "citations": [
+      {
+        "documentId": "ncert-class9-science-ch12",
+        "pageOrSlide": 205,
+        "excerpt": "It is obvious from Eq. (12.5) that the current through a resistor is inversely proportional to its resistance."
+      }
+    ],
+    "durationSeconds": 30
+  }
+}
