@@ -1,5 +1,26 @@
 import { TTSProvider } from './interfaces.js';
-import crypto from 'node:crypto';
+
+/**
+ * Deterministic 8-char hex hash from a string. Portable (browser + Node),
+ * avoids a hard dependency on the Node-only `crypto` module so these mock
+ * providers can run in the frontend bundle.
+ * @param {string} input
+ * @returns {string}
+ */
+function shortHash(input) {
+  const str = String(input === undefined || input === null ? '' : input);
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  const n = 4294967296 * (h2 >>> 0) + (h1 >>> 0);
+  return Math.abs(n).toString(16).padStart(8, '0').substring(0, 8);
+}
 
 /**
  * Normalizes language string to canonical identifier.
@@ -77,12 +98,8 @@ export class MockTTSProvider extends TTSProvider {
     const cleanText = (typeof text === 'string' ? text : String(text || '')).trim();
     const lang = normalizeLang(language);
     
-    // Hash based on clean text and language for deterministic audio URL
-    const hash = crypto
-      .createHash('md5')
-      .update(`${lang}:${cleanText || 'empty'}`)
-      .digest('hex')
-      .substring(0, 8);
+    // Deterministic hash for stable audio URL
+    const hash = shortHash(`${lang}:${cleanText || 'empty'}`);
 
     // Compute duration from word count: ~150 wpm = 2.5 words/sec, minimum 1 second
     const words = cleanText ? cleanText.split(/\s+/).filter(Boolean).length : 0;
