@@ -23,11 +23,15 @@ Run from the repository root so `services/` resolves.
 python -m pytest apps/api/tests -q
 ```
 
-95 tests cover the planner, the evaluation branches, multi-format upload (PDF /
-DOCX / PPTX), real diagram rendering, long-term student memory, flashcards,
+98 tests cover the planner, the evaluation branches, multi-format upload (PDF /
+DOCX / PPTX / TXT), real diagram rendering, long-term student memory, flashcards,
 gamified study modes, spaced multi-day revision planning and the judge-critical
-API path, including a guard against "fake adaptation" (a test that fails if the
-learner's answer does not change what is taught next).
+API path. Two of the suites are end-to-end regression guards: **upload -> plan**
+(an uploaded material must be persistable and reusable by `/lessons/plan`) and
+**unknown topic** (asking for an unsupported topic must return an honest refusal,
+never a silently mislabelled Electricity lesson). The API path also includes a
+guard against "fake adaptation" (a test that fails if the learner's answer does
+not change what is taught next).
 
 ## Endpoints
 
@@ -36,7 +40,7 @@ learner's answer does not change what is taught next).
 | GET | `/health` | Liveness and mode |
 | POST | `/materials` | Ingest a topic or pasted text into cited sections |
 | GET | `/materials/{materialId}` | Extraction status |
-| POST | `/upload` | Upload a PDF / DOCX / PPTX / TXT and index it |
+| POST | `/upload` | Upload a PDF / DOCX / PPTX / TXT / MD, persist it, and return a plan-able `materialId` |
 | POST | `/lessons/plan` | Plan a lesson for a learner profile (`studyMode`: lesson/exam/revision) |
 | GET | `/lessons/{lessonId}` | Re-fetch a plan |
 | POST | `/lessons/{lessonId}/language` | Re-render in another language, keeping progress |

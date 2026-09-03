@@ -1,6 +1,20 @@
 # GuruFlow - AI Teacher of the Future
 
-GuruFlow is a source-grounded, multilingual AI teacher that creates personalized video lessons, checks understanding, detects misconceptions, and adapts what it teaches next.
+GuruFlow is a source-grounded, multilingual AI teacher that creates personalized,
+adaptive lessons, checks understanding, detects misconceptions, and re-teaches
+what it gets wrong. It runs fully offline from the built-in Electricity corpus,
+or from **any document you upload** (PDF/DOCX/PPTX/TXT/MD).
+
+## Honest scope: the avatar and "video" reality
+
+A teacher read-along is your avatar. The product renders a **hand-drawn SVG
+teacher (blinking eyes, talking mouth) with karaoke captions and a live visual
+canvas** -- it does **not** produce a lip-synced D-ID video file out of the box.
+A real D-ID integration ships in `services/media/` and is wired for provider
+swapping, but the shipped browser uses the SVG teacher by default (a Jupyter/API
+key is required for D-ID, and the brief's "talking avatar video" would need that
+provisioned). See [the integrated product](docs/INTEGRATED_PRODUCT.md) for the
+candid SWOT on this exact trade-off.
 
 ## Product loop
 
@@ -62,10 +76,12 @@ keyword waterfall, so it adds no new failure mode and stays fast by default.
 
 `POST /upload` extracts page/slide-numbered citation sections from **PDF,
 DOCX, PPTX, TXT and MD**, so your own textbook chapter or slide deck feeds the
-same grounding pipeline as the bundled corpus:
+same grounding pipeline as the bundled corpus — and the returned `materialId`
+can be used by `POST /lessons/plan` to learn from that document:
 
 ```bash
 curl -F "file=@notes.pptx" http://127.0.0.1:8077/upload
+# then POST /lessons/plan with {"materialId": "<id from above>", ...}
 ```
 
 `POST /diagram` renders a scene's visual spec (`circuit`, `equation`, `graph`,
@@ -134,7 +150,11 @@ the flagship feature and the SWOT analysis.
 | Teacher brain | `apps/api/`, `services/ingestion/`, `services/rag/`, `services/planner/`, `services/evaluation/` |
 | Media and contracts | `services/media/`, `services/visuals/`, `packages/contracts/`, `demo-fixtures/` |
 
-Read [team ownership](docs/TEAM_OWNERSHIP.md), [integration contract](docs/INTEGRATION_CONTRACT.md), and [delivery checklist](docs/DELIVERY_CHECKLIST.md) before coding.
+Read [team implementation](docs/TEAM_IMPLEMENTATION.md) and the
+[integrated product](docs/INTEGRATED_PRODUCT.md) notes before extending the
+system. The integration contract is defined by
+[packages/contracts/](packages/contracts/README.md). A submission/delivery
+checklist lives in [docs/CODEX_TASKS_V2.md](docs/CODEX_TASKS_V2.md).
 
 ## First integration milestone
 

@@ -391,6 +391,100 @@ def test_unsupported_upload_format_rejected(client):
     assert res.status_code == 400
 
 
+def test_uploaded_text_material_can_be_planned_end_to_end(client):
+    """Regression test for the upload -> plan chain (Bug 1).
+
+    An uploaded file must be persisted so the materialId returned by /upload
+    is accepted by /lessons/plan. Previously the parsed sections were returned
+    to the browser but never saved server-side, so planning 404'd.
+    """
+    raw = (
+        "Ohm's Law\n"
+        "The current through a conductor is directly proportional to the "
+        "voltage across it when resistance is constant.\n\n"
+        "Series Circuits\n"
+        "In a series circuit, the same current flows through every component.\n"
+    )
+    up = client.post("/upload", files={"file": ("notes.txt", raw.encode(), "text/plain")})
+    assert up.status_code == 200, up.text
+    material_id = up.json()["materialId"]
+    assert material_id
+
+    plan_resp = client.post(
+        "/lessons/plan",
+        json={
+            "learner": {
+                "level": "beginner", "language": "english", "availableMinutes": 10,
+                "goal": "Understand Ohm's Law",
+            },
+            "topic": "Ohm's Law",
+            "materialId": material_id,
+        },
+    )
+    assert plan_resp.status_code == 200, plan_resp.text
+    plan = plan_resp.json()
+    assert plan["materialId"] == material_id
+    # The uploaded material grounds at least one scene with a real citation.
+    assert any(scene["citations"] for scene in plan["scenes"])
+
+
+def test_uploaded_docx_material_can_be_planned_end_to_end(client):
+    """The parse-and-persist path must also work for binary formats (Bug 1)."""
+    from io import BytesIO
+    from docx import Document
+
+    doc = Document()
+    doc.add_heading("resistance", level=1)
+    doc.add_paragraph("Resistance is the property of a conductor to resist the flow of charges through it.")
+    buf = BytesIO()
+    doc.save(buf)
+
+    up = client.post(
+        "/upload",
+        files={"file": ("notes.docx", buf.getvalue(),
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+    assert up.status_code == 200, up.text
+    material_id = up.json()["materialId"]
+
+    plan_resp = client.post(
+        "/lessons/plan",
+        json={
+            "learner": {
+                "level": "beginner", "language": "english", "availableMinutes": 10,
+                "goal": "Understand resistance",
+            },
+            "topic": "Resistance",
+            "materialId": material_id,
+        },
+    )
+    assert plan_resp.status_code == 200, plan_resp.text
+    assert plan_resp.json()["materialId"] == material_id
+
+
+def test_unknown_topic_returns_honest_refusal_not_electricity(client):
+    """Regression test for Bug 2: asking for an unsupported topic without an
+    LLM key must never silently teach a different subject (Electricity)."""
+    response = client.post(
+        "/lessons/plan",
+        json={
+            "learner": {
+                "level": "beginner", "language": "hinglish", "availableMinutes": 10,
+                "goal": "Learn it",
+            },
+            "topic": "Photosynthesis",
+        },
+    )
+    assert response.status_code == 200, response.text
+    plan = response.json()
+    assert plan["unsupportedTopic"] is True
+    assert plan["tier"] == "unsupported-topic"
+    assert all(scene["conceptId"] == "unsupported-topic" for scene in plan["scenes"])
+    assert all(scene["citations"] == [] for scene in plan["scenes"])
+    # Never teach electricity content under a Photosynthesis label.
+    assert all("Electric Current" not in s["narration"] for s in plan["scenes"])
+
+
 def test_diagram_renders_real_png_for_each_visual_type(client):
     for vtype in ("circuit", "equation", "graph", "concept_map", "water_pipe_analogy"):
         res = client.post("/diagram", json={"type": vtype, "title": vtype})

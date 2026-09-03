@@ -49,7 +49,7 @@ from services.evaluation import (  # noqa: E402
     build_report,
     evaluate_answer,
 )
-from services.ingestion import ingest_text, ingest_topic  # noqa: E402
+from services.ingestion import ingest_text, ingest_topic, Material  # noqa: E402
 from services.planner import plan_lesson  # noqa: E402
 from services.planner.flashcards import generate_flashcards  # noqa: E402
 from services.planner.persona import persona_feedback  # noqa: E402
@@ -452,24 +452,36 @@ async def upload_material(file: UploadFile = File(...)) -> dict[str, Any]:
     filename = file.filename or "uploaded-file"
     lower_name = filename.lower()
 
+    sections: list[dict[str, Any]] | None = None
     if lower_name.endswith(".pdf"):
         sections = _parse_pdf(content)
-        return _upload_response(filename, sections, "upload")
     elif lower_name.endswith(".docx"):
         sections = _parse_docx(content)
-        return _upload_response(filename, sections, "upload")
     elif lower_name.endswith((".ppt", ".pptx")):
         sections = _parse_pptx(content)
-        return _upload_response(filename, sections, "upload")
     elif lower_name.endswith((".txt", ".md")):
         text = content.decode("utf-8", errors="replace")
         material = ingest_text(text, title=filename)
+        repository.save_material(material)
         return material.to_dict()
     else:
         raise HTTPException(
             status_code=400,
             detail="Supported formats: PDF, DOCX, PPTX, TXT, MD",
         )
+
+    # Persist the parsed document as a real, retrievable Material so the plan
+    # endpoint can look it up by materialId (must match what we return).
+    material = Material(
+        material_id=f"material-upload-{filename}",
+        document_id=f"material-upload-{filename}",
+        title=filename,
+        status="ready",
+        sections=sections,
+        origin="upload",
+    )
+    repository.save_material(material)
+    return material.to_dict()
 
 
 @app.post("/diagram")
@@ -491,25 +503,6 @@ async def render_diagram(body: dict[str, Any]) -> Response:
         media_type="image/png",
         headers={},
     )
-
-
-def _upload_response(
-    filename: str,
-    sections: list[dict[str, Any]],
-    origin: str,
-) -> dict[str, Any]:
-    """Shape parsed sections into the contract material response."""
-    material_id = f"material-upload-{filename}"
-    return {
-        "materialId": material_id,
-        "documentId": material_id,
-        "title": filename,
-        "status": "ready",
-        "origin": origin,
-        "sectionCount": len(sections),
-        "pageCount": len({s["pageOrSlide"] for s in sections}),
-        "sections": sections,
-    }
 
 
 def _parse_pdf(content: bytes) -> list[dict[str, Any]]:

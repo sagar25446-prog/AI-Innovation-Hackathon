@@ -6,7 +6,7 @@ GuruFlow uses the following third-party components, libraries, and APIs.
 
 | Service | Purpose | License | Usage |
 |---------|---------|---------|-------|
-| Google Gemini 2.0 Flash | LLM-powered lesson planning and answer evaluation | Google AI Studio Terms | Free tier, optional |
+| Google Gemini 2.5 Flash (`gemini-2.5-flash`) | LLM-powered lesson planning and answer evaluation | Google AI Studio Terms | Free tier, optional |
 | D-ID API | Lip-synced avatar video generation | D-ID Terms of Service | Free trial (5 min video), optional |
 | edge-tts | Text-to-speech synthesis | MIT License | Free, no API key needed |
 

@@ -339,6 +339,116 @@ def _plan_lesson_llm(
         return None
 
 
+def _unsupported_topic_narration(language: str) -> str:
+    """Honest, help-not-mislead message for a topic we cannot yet teach offline."""
+    return {
+        "english": (
+            "I don't have curated, source-grounded material for this topic in "
+            "offline mode yet. Upload a document, or switch on an LLM API key, "
+            "and I'll teach it properly."
+        ),
+        "hinglish": (
+            "Is topic ke liye mere paas abhi offline mode mein curated, "
+            "source-grounded content nahi hai. Ek document upload karo, ya LLM "
+            "API key on karo, tab main ise sahi tarike se padha sakta hoon."
+        ),
+        "hindi": (
+            "इस विषय के लिए मेरे पास अभी offline मोड में curated, "
+            "source-grounded सामग्री नहीं है। कोई document अपलोड करें, या LLM "
+            "API key चालू करें, तब मैं इसे सही तरीके से पढ़ा सकता हूँ।"
+        ),
+    }.get(language, "english")
+
+
+def _plan_unsupported_topic(
+    learner: dict[str, Any],
+    material: Material,
+    topic: str,
+    lesson_id: str | None,
+    study_mode: str = "lesson",
+) -> dict[str, Any]:
+    """Return an honest, contract-shaped plan admitting we lack grounded content.
+
+    Served instead of teaching the wrong subject: when a learner asks for a
+    topic that resolves to no source material (no upload, no built-in corpus)
+    and no LLM is available, we say so instead of silently teaching Electricity.
+    The single scene never fabricates a citation, never transforms into another
+    subject, and tells the learner exactly how to proceed.
+    """
+    language = learner["language"]
+    level = learner["level"]
+    available_minutes = int(learner.get("availableMinutes", 10))
+    narration = _unsupported_topic_narration(language)
+    if level != "beginner":
+        narration = (
+            f"{narration} "
+            + {
+                "beginner": "",
+                "intermediate": (
+                    "(Note: offline mode covers the built-in Electricity corpus "
+                    "and any document you upload.)"
+                    if language == "english"
+                    else "(Note: offline mode mein built-in Electricity corpus aur "
+                    "aapke upload kiye document hi available hain.)"
+                    if language == "hinglish"
+                    else "(ध्यान दें: offline मोड में built-in Electricity corpus और "
+                    "आपके upload किए document ही उपलब्ध हैं।)"
+                ),
+                "advanced": (
+                    "(Tip: paste the source text or upload a PDF/PPTX from any "
+                    "syllabus and this becomes a grounded lesson.)"
+                    if language == "english"
+                    else "(Tip: koi bhi syllabus ka source text paste karo ya "
+                    "PDF/PPTX upload karo, yah grounded lesson ban jayega.)"
+                    if language == "hinglish"
+                    else "(टिप: किसी भी syllabus का source text पेस्ट करें या "
+                    "PDF/PPTX अपलोड करें, यह grounded lesson बन जाएगा।)"
+                ),
+            }[level]
+        )
+
+    scenes = [
+        {
+            "id": f"scene-1-unsupported-topic",
+            "conceptId": "unsupported-topic",
+            "objective": f"Understanding {topic or 'this topic'}",
+            "narration": narration,
+            "visual": {"type": "concept_map", "data": {}},
+            "citations": [],
+            "durationSeconds": max(MIN_SCENE_SECONDS, int(round(30 * available_minutes / 10))),
+            "groundingStatus": "general_knowledge",
+            "unsupportedTopic": True,
+        }
+    ]
+
+    return {
+        "id": lesson_id or f"lesson-{uuid.uuid4().hex[:8]}",
+        "learner": dict(learner),
+        "scenes": scenes,
+        "topic": topic,
+        "materialId": material.material_id,
+        "documentTitle": material.title,
+        "tier": "unsupported-topic",
+        "estimatedSeconds": scenes[0]["durationSeconds"],
+        "studyMode": study_mode,
+        "unsupportedTopic": True,
+    }
+
+
+def _has_groundable_content(material: Material) -> bool:
+    """True when the material can actually ground a lesson.
+
+    An uploaded document or the built-in Electricity corpus has sections. A
+    topic-only request for an unknown subject resolves to an empty Material
+    (``origin == "topic-only"`` with no sections).
+    """
+    if material.sections:
+        return True
+    # The empty-topic default still maps to the built-in Electricity corpus,
+    # which carries sections -- so reaching here genuinely means "unknown topic".
+    return False
+
+
 def plan_lesson(
     learner: dict[str, Any],
     material: Material,
@@ -355,6 +465,10 @@ def plan_lesson(
       * ``lesson``   - a normal teaching lesson (default)
       * ``exam``     - assessment-heavy drill, centred on the checkpoint/practice
       * ``revision`` - a quick spaced recap, centred on core + summary
+
+    When the material carries no grounded content (an unknown topic with no
+    upload and no built-in corpus) the deterministic fallback returns an honest
+    "unsupported topic" plan instead of silently teaching the wrong subject.
     """
     # Vector-index the material so retrieval can use the persistent ChromaDB
     # store (falls back silently to in-memory/keyword search if unavailable).
@@ -367,6 +481,14 @@ def plan_lesson(
     if llm_plan is not None:
         llm_plan["studyMode"] = study_mode
         return llm_plan
+
+    # Honest refusal over wrong content: with no LLM and nothing to ground on,
+    # never silently teach the Electricity default to a learner who asked for
+    # Photosynthesis or Newton's Laws.
+    if not _has_groundable_content(material):
+        return _plan_unsupported_topic(
+            learner, material, topic, lesson_id, study_mode
+        )
 
     plan = _plan_lesson_deterministic(learner, material, topic, lesson_id, study_mode)
     plan["studyMode"] = study_mode
