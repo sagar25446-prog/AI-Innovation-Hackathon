@@ -307,6 +307,26 @@ def test_watching_a_checkpoint_earns_no_mastery(client):
     assert checkpoint_scene["conceptId"] not in report["weakConcepts"]
 
 
+def test_repair_scene_counts_as_watched(client):
+    """Repair scenes are not on the plan but the learner still watched them."""
+    plan = make_plan(client)
+    lesson_id = plan["id"]
+    checkpoint_id = next(s["checkpointId"] for s in plan["scenes"] if s.get("checkpointId"))
+
+    wrong = client.post(
+        f"/lessons/{lesson_id}/checkpoints/{checkpoint_id}/answer",
+        json={"answer": "Current increases when resistance increases."},
+    ).json()
+    repair_id = wrong["repairScene"]["id"]
+
+    response = client.post(f"/lessons/{lesson_id}/scenes/{repair_id}/complete")
+    assert response.status_code == 200
+    assert response.json()["repair"] is True
+
+    # An unknown, non-repair scene id is still a 404.
+    assert client.post(f"/lessons/{lesson_id}/scenes/not-a-scene/complete").status_code == 404
+
+
 def test_missing_lesson_returns_404(client):
     assert client.get("/lessons/does-not-exist").status_code == 404
     assert (

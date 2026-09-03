@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>GuruFlow - AI Teacher of the Future</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%236c8cff%27/%3E%3Ctext x=%2716%27 y=%2722%27 font-family=%27sans-serif%27 font-size=%2714%27 font-weight=%27bold%27 fill=%27white%27 text-anchor=%27middle%27%3EGF%3C/text%3E%3C/svg%3E" />
 <link rel="stylesheet" href="/src/styles.css" />
 </head>
 <body>
@@ -310,6 +311,7 @@
           <option value="english">English</option>
           <option value="hindi">Hindi</option>
         </select>
+        <button id="video-btn" class="btn btn-ghost btn-sm" type="button" aria-pressed="false" disabled>Video</button>
         <button id="voice-btn" class="btn btn-ghost btn-sm" type="button" aria-pressed="false">Voice off</button>
         <button id="evidence-btn" class="btn btn-ghost btn-sm" type="button">Evidence</button>
       </div>
@@ -413,7 +415,25 @@
       </div><!-- /classroom-main -->
     </div><!-- /classroom-layout -->
 
+    <div class="video-stage" id="video-stage" hidden>
+        <video id="lesson-video" class="lesson-video" controls playsinline preload="auto"></video>
+        <div class="video-caption">
+          <span id="video-note">Narrated teaching video, rendered from this lesson's own scene data.</span>
+        </div>
+      </div>
+
     <div class="captions" id="captions" aria-live="polite"></div>
+
+    <!-- Follow-up questions, answered from the lesson's own material -->
+    <div class="ask-panel">
+      <div class="ask-row">
+        <input id="ask-input" type="text" autocomplete="off"
+               placeholder="Ask the teacher anything about this lesson..." />
+        <button id="ask-btn" class="btn btn-ghost" type="button">Ask</button>
+      </div>
+      <div id="ask-answer" class="ask-answer" hidden></div>
+    </div>
+
 
     <!-- Checkpoint interaction -->
     <div id="checkpoint-panel" class="card checkpoint" hidden>

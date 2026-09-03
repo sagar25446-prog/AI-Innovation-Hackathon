@@ -291,6 +291,133 @@ function currentScene() {
   return state.scenes[state.sceneIndex];
 }
 
+/* ------------------------------------------------------------------ *
+ * Teaching video
+ *
+ * The backend renders each scene into a narrated MP4 (Manim animation +
+ * neural voice). Rendering takes seconds, so the interactive view stays up
+ * and the video is offered the moment its file exists. Nothing here blocks
+ * the lesson: if video generation is unavailable the button simply stays
+ * disabled and the lesson runs exactly as before.
+ * ------------------------------------------------------------------ */
+
+const video = {
+  enabled: false,
+  available: false,
+  byScene: new Map(),   // scene id -> {status, url}
+  poll: null,
+};
+
+async function requestSceneVideo(scene) {
+  const response = await fetch('/video/render', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scene, language: state.plan.learner.language }),
+  });
+  if (!response.ok) throw new Error(`render ${response.status}`);
+  return response.json();
+}
+
+function setVideoButton(status) {
+  const button = $('video-btn');
+  if (!button) return;
+  button.classList.toggle('is-rendering', status === 'rendering');
+  if (status === 'ready') {
+    button.disabled = false;
+    button.textContent = video.enabled ? 'Video on' : 'Watch video';
+  } else if (status === 'rendering') {
+    button.disabled = true;
+    button.textContent = 'Rendering';
+  } else {
+    button.disabled = true;
+    button.textContent = 'Video';
+  }
+  button.setAttribute('aria-pressed', String(video.enabled));
+}
+
+function showVideoStage(show) {
+  const stage = $('classroom-stage');
+  const layout = document.querySelector('.classroom-layout');
+  const player = $('lesson-video');
+  $('video-stage').hidden = !show;
+  if (layout) layout.hidden = show;
+  else if (stage) stage.hidden = show;
+
+  if (show) {
+    stopTimer();                     // the video carries its own narration
+    $('captions').hidden = true;
+  } else {
+    $('captions').hidden = false;
+    if (player) player.pause();
+  }
+}
+
+function stopVideoPolling() {
+  if (video.poll) {
+    clearInterval(video.poll);
+    video.poll = null;
+  }
+}
+
+/** Ask for this scene's video and watch for it becoming ready. */
+function ensureSceneVideo(scene) {
+  stopVideoPolling();
+  const cached = video.byScene.get(scene.id);
+  if (cached && cached.status === 'ready') {
+    applySceneVideo(scene, cached);
+    return;
+  }
+
+  setVideoButton('rendering');
+  requestSceneVideo(scene)
+    .then((info) => {
+      video.available = true;
+      video.byScene.set(scene.id, info);
+      if (info.status === 'ready') {
+        applySceneVideo(scene, info);
+        return;
+      }
+      // Poll until the background render lands.
+      video.poll = setInterval(async () => {
+        try {
+          const res = await fetch(`/video/${info.videoId}/status`);
+          const next = await res.json();
+          if (next.status === 'ready') {
+            stopVideoPolling();
+            video.byScene.set(scene.id, next);
+            if (currentScene().id === scene.id) applySceneVideo(scene, next);
+          } else if (String(next.status).startsWith('failed')) {
+            stopVideoPolling();
+            setVideoButton('absent');
+          }
+        } catch {
+          stopVideoPolling();
+          setVideoButton('absent');
+        }
+      }, 2500);
+    })
+    .catch(() => {
+      // 503 means manim/ffmpeg are missing; the lesson is unaffected.
+      video.available = false;
+      setVideoButton('absent');
+    });
+}
+
+function applySceneVideo(scene, info) {
+  if (currentScene().id !== scene.id) return;
+  setVideoButton('ready');
+  const player = $('lesson-video');
+  if (!player) return;
+  if (player.dataset.videoId !== info.videoId) {
+    player.dataset.videoId = info.videoId;
+    player.src = info.url;
+  }
+  if (video.enabled) {
+    showVideoStage(true);
+    player.play().catch(() => {});   // autoplay may be blocked; controls remain
+  }
+}
+
 function stopTimer() {
   if (state.timer) {
     clearInterval(state.timer);
@@ -363,6 +490,10 @@ function startScene() {
   }
 
   state.client.completeScene(state.plan.id, scene.id).catch(() => {});
+
+  // Ask for this scene's teaching video; it arrives when it arrives.
+  ensureSceneVideo(scene);
+  if (!video.enabled) showVideoStage(false);
 }
 
 function runCaptions(scene, captions) {
@@ -1135,6 +1266,57 @@ function setRadio(groupName, value) {
   if (radio) radio.checked = true;
 }
 
+
+/* ------------------------------------------------------------------ *
+ * Follow-up questions
+ * ------------------------------------------------------------------ */
+
+async function askFollowUp() {
+  const input = $('ask-input');
+  const box = $('ask-answer');
+  const question = input.value.trim();
+  if (!question) return;
+
+  const button = $('ask-btn');
+  button.disabled = true;
+  button.textContent = 'Asking...';
+  box.hidden = false;
+  box.textContent = 'Looking this up in your material...';
+
+  try {
+    const response = await fetch(`/lessons/${state.plan.id}/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, language: state.plan.learner.language }),
+    });
+    if (!response.ok) throw new Error(`ask ${response.status}`);
+    const result = await response.json();
+
+    box.textContent = '';
+    box.classList.toggle('is-ungrounded', !result.grounded);
+    const answer = document.createElement('div');
+    answer.textContent = result.answer;
+    box.appendChild(answer);
+
+    // Show where the answer came from, exactly as scenes do.
+    if (result.citations && result.citations.length) {
+      const cite = document.createElement('span');
+      cite.className = 'ask-cite';
+      cite.textContent = result.citations
+        .map((c) => `${c.documentId} p.${c.pageOrSlide}`)
+        .join('  |  ');
+      box.appendChild(cite);
+    }
+    input.value = '';
+  } catch (err) {
+    box.classList.add('is-ungrounded');
+    box.textContent = `Could not answer that right now: ${err.message}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Ask';
+  }
+}
+
 function init() {
   syncControlUI();
   showScreen('landing', { instant: true });
@@ -1204,6 +1386,24 @@ function init() {
     showScreen('classroom');
     $('lang-switch').value = state.plan.learner.language;
     startScene();
+    // Warm every scene's video (and both repair scenes) in the background so
+    // the flagship moment never waits on a render.
+    fetch(`/lessons/${state.plan.id}/video/prerender`, { method: 'POST' }).catch(() => {});
+  });
+
+  $('ask-btn').addEventListener('click', askFollowUp);
+  $('ask-input').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') askFollowUp();
+  });
+
+  $('video-btn').addEventListener('click', () => {
+    video.enabled = !video.enabled;
+    showVideoStage(video.enabled);
+    setVideoButton('ready');
+    if (video.enabled) {
+      const player = $('lesson-video');
+      if (player && player.src) player.play().catch(() => {});
+    }
   });
 
   $('next-scene').addEventListener('click', handleNext);

@@ -1,16 +1,31 @@
+# GuruFlow core dependencies.
+# Everything here installs from wheels on Windows, macOS and Linux with no
+# compiler toolchain. Keep it that way: a judge must be able to clone and run.
+
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic==2.10.4
 httpx==0.28.1
 pytest==8.3.4
-google-genai==2.8.0
 python-dotenv==1.0.1
-edge-tts==7.0.2
-PyMuPDF==1.25.3
 python-multipart==0.0.20
+
+# LLM (optional at runtime - the app runs deterministically without a key)
+google-genai==2.8.0
+langchain-core==1.6.1
+
+# Document parsing
+PyMuPDF==1.25.3
 python-docx==1.2.0
 python-pptx==1.0.2
+
+# Voice. 7.2+ is required: 7.0.x fails with HTTP 403 because Microsoft
+# changed the Sec-MS-GEC token scheme.
+edge-tts>=7.2.8
+gTTS==2.5.4
+
+# Teaching-video generation. imageio-ffmpeg ships a static ffmpeg binary, so
+# no system ffmpeg install is needed.
+manim==0.21.0
+imageio-ffmpeg==0.6.0
 matplotlib==3.10.8
-langchain-core==1.6.1
-sentence-transformers==3.3.1
-chromadb==0.5.23
