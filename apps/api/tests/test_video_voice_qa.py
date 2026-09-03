@@ -356,3 +356,108 @@ def test_status_names_the_engine():
     from services.video import talking_head
 
     assert talking_head.status()["engine"] == "sadtalker"
+
+
+# ---------------------------------------------------------------------------
+# Committed demo video seeding
+# ---------------------------------------------------------------------------
+
+
+def test_seed_dir_exists_and_holds_the_demo_videos():
+    """Demo-day insurance: the judged lesson must not render on the critical path."""
+    seed_dir = video_service.SEED_DIR
+    assert seed_dir.exists(), f"expected committed demo videos at {seed_dir}"
+    videos = list(seed_dir.glob("*.mp4"))
+    assert len(videos) >= 9, "7 lesson scenes + 2 repair scenes expected"
+    assert all(v.stat().st_size > 10_000 for v in videos)
+
+
+def test_seeding_is_idempotent_and_never_clobbers_a_local_render(tmp_path):
+    """A locally re-rendered video must survive a restart."""
+    source = tmp_path / "seed"
+    source.mkdir()
+    (source / "aaaa1111.mp4").write_bytes(b"committed-copy")
+
+    cache = video_service.CACHE_DIR
+    cache.mkdir(parents=True, exist_ok=True)
+    target = cache / "aaaa1111.mp4"
+    target.write_bytes(b"locally-rendered-and-newer")
+    try:
+        summary = video_service.seed_cache_from_repo(source)
+        assert summary["skipped"] == 1
+        assert summary["seeded"] == 0
+        assert target.read_bytes() == b"locally-rendered-and-newer"
+    finally:
+        target.unlink(missing_ok=True)
+
+
+def test_seeding_copies_when_the_cache_is_empty(tmp_path):
+    source = tmp_path / "seed"
+    source.mkdir()
+    (source / "bbbb2222.mp4").write_bytes(b"x" * 32)
+
+    target = video_service.CACHE_DIR / "bbbb2222.mp4"
+    target.unlink(missing_ok=True)
+    try:
+        summary = video_service.seed_cache_from_repo(source)
+        assert summary["seeded"] == 1
+        assert target.exists()
+    finally:
+        target.unlink(missing_ok=True)
+
+
+def test_seeding_tolerates_a_missing_seed_directory(tmp_path):
+    """A fresh clone without demo assets must still start."""
+    summary = video_service.seed_cache_from_repo(tmp_path / "does-not-exist")
+    assert summary["available"] is False
+    assert summary["seeded"] == 0
+
+
+def test_committed_seeds_match_the_current_demo_lesson_hashes():
+    """Guard against silent seed drift.
+
+    Video filenames are content hashes covering narration, visual, language,
+    quality *and* renderer version. Any change to those invalidates the
+    committed demo videos, and the failure is silent - the demo simply starts
+    rendering live again, which is exactly the risk the seeds exist to remove.
+
+    This caught a real drift during development: adding `hideBuiltInTeacher` to
+    the hash left 0 of 7 seeds matching.
+    """
+    from services.evaluation import (
+        CONSTANT_CURRENT,
+        DIRECT_PROPORTIONALITY,
+        build_repair_scene,
+    )
+    from services.ingestion import ingest_topic
+    from services.planner import plan_lesson
+
+    seeded = {p.stem for p in video_service.SEED_DIR.glob("*.mp4")}
+    assert seeded, "no committed demo videos found"
+
+    language = "hinglish"
+    plan = plan_lesson(
+        {
+            "level": "beginner",
+            "language": language,
+            "availableMinutes": 20,
+            "goal": "Understand Ohm's Law",
+        },
+        ingest_topic("Ohm's Law"),
+        topic="Ohm's Law",
+    )
+
+    expected = [(s["conceptId"], video_service.video_id(s, language)) for s in plan["scenes"]]
+    expected += [
+        ("repair-direct-proportionality",
+         video_service.video_id(build_repair_scene(DIRECT_PROPORTIONALITY, language), language)),
+        ("repair-constant-current",
+         video_service.video_id(build_repair_scene(CONSTANT_CURRENT, language), language)),
+    ]
+
+    missing = [name for name, vid in expected if vid not in seeded]
+    assert not missing, (
+        "Committed demo videos are stale for: "
+        + ", ".join(missing)
+        + ". Re-render them into demo-assets/videos/ (see demo-assets/README.md)."
+    )

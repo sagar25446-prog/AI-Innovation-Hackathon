@@ -298,6 +298,43 @@ def _normalise_llm_scenes(scenes: Any) -> list[dict[str, Any]]:
     return normalised
 
 
+def _ground_llm_scenes(
+    scenes: list[dict[str, Any]], material: Material
+) -> list[dict[str, Any]]:
+    """Attach real, page-level citations to LLM-authored scenes.
+
+    ``generate_plan``'s prompt tells the model to return ``"citations": []``
+    because "backend fills this" - but nothing was filling them, so every
+    LLM-planned lesson (which is what an upload or an off-corpus topic gets)
+    came back with no citations and ``groundingStatus: general_knowledge``.
+    The product's whole grounding story silently vanished on exactly the path
+    where it matters most.
+
+    Retrieval itself is untouched: this reuses the same ``retrieve`` /
+    ``best_citations`` / ``grounding_status`` calls the deterministic planner
+    uses, querying with the scene's own concept and objective.
+    """
+    for scene in scenes:
+        if scene.get("citations"):
+            # The model volunteered citations that survived normalisation;
+            # trust them rather than second-guessing.
+            continue
+
+        query = " ".join(
+            part
+            for part in (
+                str(scene.get("conceptId", "")).replace("-", " "),
+                str(scene.get("objective", "")),
+                str(scene.get("narration", ""))[:240],
+            )
+            if part
+        )
+        results = retrieve(query, material.sections, material.document_id)
+        scene["citations"] = best_citations(results)
+        scene["groundingStatus"] = grounding_status(results)
+    return scenes
+
+
 def _plan_lesson_llm(
     learner: dict[str, Any],
     material: Material,
@@ -322,6 +359,8 @@ def _plan_lesson_llm(
         scenes = _normalise_llm_scenes(llm_result["scenes"])
         if not scenes:
             return None
+        # The prompt asks the model to leave citations empty; fill them for real.
+        scenes = _ground_llm_scenes(scenes, material)
 
         total_seconds = sum(s.get("durationSeconds", 30) for s in scenes)
         return {
@@ -339,9 +378,42 @@ def _plan_lesson_llm(
         return None
 
 
-def _unsupported_topic_narration(language: str) -> str:
-    """Honest, help-not-mislead message for a topic we cannot yet teach offline."""
-    return {
+_UPLOADED_OFF_CATALOGUE = {
+    "english": (
+        "I can read your document, but in offline mode my curated teaching "
+        "content only covers the built-in Class 9 Electricity chapter, so I "
+        "will not pretend to teach this from it. Switch on an LLM API key and "
+        "I will teach your document properly, with citations back to it."
+    ),
+    "hinglish": (
+        "Main aapka document padh sakta hoon, lekin offline mode mein mera "
+        "curated content sirf built-in Class 9 Electricity chapter ka hai, "
+        "toh main jhootha lesson nahi banaunga. LLM API key on karo, phir main "
+        "aapke document se hi padhaunga, uske citations ke saath."
+    ),
+    "hindi": (
+        "मैं आपका document पढ़ सकता हूँ, लेकिन offline मोड में मेरी curated "
+        "सामग्री केवल built-in कक्षा 9 विद्युत अध्याय की है, इसलिए मैं झूठा पाठ "
+        "नहीं बनाऊँगा। LLM API key चालू करें, फिर मैं आपके document से ही "
+        "पढ़ाऊँगा, उसके citations के साथ।"
+    ),
+}
+
+
+def _unsupported_topic_narration(
+    language: str, material: Material | None = None
+) -> str:
+    """Honest, help-not-mislead message for a topic we cannot yet teach offline.
+
+    Two distinct cases, because the right next step differs: a learner who has
+    uploaded a document should not be told to upload a document.
+    """
+    if material is not None and material.origin == "upload":
+        return _UPLOADED_OFF_CATALOGUE.get(
+            language, _UPLOADED_OFF_CATALOGUE["english"]
+        )
+
+    messages = {
         "english": (
             "I don't have curated, source-grounded material for this topic in "
             "offline mode yet. Upload a document, or switch on an LLM API key, "
@@ -357,7 +429,10 @@ def _unsupported_topic_narration(language: str) -> str:
             "source-grounded सामग्री नहीं है। कोई document अपलोड करें, या LLM "
             "API key चालू करें, तब मैं इसे सही तरीके से पढ़ा सकता हूँ।"
         ),
-    }.get(language, "english")
+    }
+    # Guard against an unexpected language code: fall back to the English
+    # narration, not the literal string "english".
+    return messages.get(language, messages["english"])
 
 
 def _plan_unsupported_topic(
@@ -378,7 +453,7 @@ def _plan_unsupported_topic(
     language = learner["language"]
     level = learner["level"]
     available_minutes = int(learner.get("availableMinutes", 10))
-    narration = _unsupported_topic_narration(language)
+    narration = _unsupported_topic_narration(language, material)
     if level != "beginner":
         narration = (
             f"{narration} "
@@ -435,18 +510,47 @@ def _plan_unsupported_topic(
     }
 
 
-def _has_groundable_content(material: Material) -> bool:
-    """True when the material can actually ground a lesson.
+# Core curated concepts. If the material cannot ground at least
+# ``_CURATED_MATCH_THRESHOLD`` of these, the deterministic engine has nothing
+# truthful to teach from it.
+_CURATED_PROBE_CONCEPTS = ("electric-current", "voltage", "resistance", "ohms-law")
+_CURATED_MATCH_THRESHOLD = 2
 
-    An uploaded document or the built-in Electricity corpus has sections. A
-    topic-only request for an unknown subject resolves to an empty Material
-    (``origin == "topic-only"`` with no sections).
+
+def _curated_catalogue_grounds(material: Material) -> bool:
+    """True when the curated Electricity catalogue actually fits this material.
+
+    Having *sections* is not the same as being teachable. A learner who
+    uploads a photosynthesis passage previously got a full Ohm's Law lesson:
+    honest about grounding (no fabricated citations) but about entirely the
+    wrong subject, which is worse than admitting the limitation.
+
+    Probes the core curated concepts against the material with the existing
+    retrieval path. Retrieval logic is untouched; this only asks it a question.
     """
-    if material.sections:
-        return True
-    # The empty-topic default still maps to the built-in Electricity corpus,
-    # which carries sections -- so reaching here genuinely means "unknown topic".
+    if not material.sections:
+        return False
+
+    grounded = 0
+    for concept_id in _CURATED_PROBE_CONCEPTS:
+        concept = CONCEPTS_BY_ID.get(concept_id)
+        if not concept:
+            continue
+        results = retrieve(concept["query"], material.sections, material.document_id)
+        if best_citations(results):
+            grounded += 1
+            if grounded >= _CURATED_MATCH_THRESHOLD:
+                return True
     return False
+
+
+def _has_groundable_content(material: Material) -> bool:
+    """True when a deterministic, source-grounded lesson is actually possible.
+
+    Requires both that the material has sections *and* that the curated
+    catalogue matches it.
+    """
+    return _curated_catalogue_grounds(material)
 
 
 def plan_lesson(

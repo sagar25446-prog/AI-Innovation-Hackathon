@@ -11,6 +11,10 @@
 
 import { DefaultSceneRenderer } from '/vendor/media/scene-renderer.js';
 import { AvatarProvider, TTSProvider } from '/vendor/media/interfaces.js';
+import {
+  PrerenderedAvatarProvider,
+  clipRoleForScene,
+} from './prerendered-avatar-provider.js';
 
 const VOICE_BY_LANGUAGE = {
   english: 'en-IN',
@@ -168,10 +172,24 @@ export class FallbackAvatarProvider extends AvatarProvider {
 
 /** Media pipeline wired from the contract's own renderer. */
 export class MediaAdapter {
-  constructor() {
+  constructor(options = {}) {
     this.tts = new ServerTTSProvider();
-    this.avatar = new FallbackAvatarProvider();
+    // Pre-rendered SadTalker clips when they exist on disk. Until then this
+    // throws, which the renderer treats as "no avatar configured" and falls
+    // back to the drawn teacher panel - the behaviour shipped today.
+    this.avatar = new PrerenderedAvatarProvider(options.avatar);
+    // Kept as an explicit revert path: assign this to `adapter.avatar` to go
+    // back to the previous behaviour without touching the pipeline.
+    this.fallbackAvatar = new FallbackAvatarProvider();
     this.renderer = new DefaultSceneRenderer();
+  }
+
+  /**
+   * Revert to the previous avatar behaviour.
+   * Kept deliberately simple so it can be done from the console mid-demo.
+   */
+  useFallbackAvatar() {
+    this.avatar = this.fallbackAvatar;
   }
 
   setVoiceEnabled(enabled) {
@@ -188,11 +206,30 @@ export class MediaAdapter {
    * Render a Scene through services/media.
    * Returns a MediaResult, degraded rather than failed if a provider is down.
    */
-  async render(scene, language) {
+  /**
+   * Render a Scene through services/media.
+   * @param {Object} scene
+   * @param {string} language
+   * @param {Object} [context={}] - Lesson-moment hints used to pick an avatar clip.
+   */
+  async render(scene, language, context = {}) {
     try {
+      const clipRole = clipRoleForScene({
+        isRepair: Boolean(scene.isRepair),
+        ...context,
+      });
+      // services/media's renderer forwards a fixed option set to
+      // generateAvatar and does not know about clipRole. Rather than edit
+      // Person 3's module, bind the role with a stateless per-call wrapper -
+      // the renderer only ever calls generateAvatar, so duck typing is enough.
+      const avatarProvider = {
+        generateAvatar: (narration, audioUrl, opts = {}) =>
+          this.avatar.generateAvatar(narration, audioUrl, { ...opts, clipRole }),
+      };
+
       const result = await this.renderer.renderScene(
         { ...scene, language },
-        { ttsProvider: this.tts, avatarProvider: this.avatar, language }
+        { ttsProvider: this.tts, avatarProvider, language }
       );
       return result;
     } catch (error) {

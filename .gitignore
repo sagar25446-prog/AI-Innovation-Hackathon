@@ -6,3 +6,9 @@ __pycache__/
 venv/
 node_modules/
 .DS_Store
+
+# Manim writes its intermediate text/SVG cache next to the process cwd.
+# Rendered lesson videos are cached outside the repo; only the curated
+# demo-assets/videos/ are committed (see demo-assets/README.md).
+media/
+*.log

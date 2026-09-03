@@ -31,6 +31,8 @@ from manim import (
     RoundedRectangle,
     Scene,
     Text,
+    Transform,
+    ValueTracker,
     VGroup,
     Write,
     config,
@@ -179,12 +181,24 @@ def build_equation(data: dict[str, Any]):
         )
         expr = Text(step["expression"], font_size=26 if has_extras else 30,
                     color=TEXT, font=MONO)
+        # Fixture steps can be long ("R up => I down (constant V)"); keep the
+        # expression inside its box rather than letting it bleed past the edge.
+        max_expr_width = box.width - 0.7
+        if expr.width > max_expr_width:
+            expr.scale_to_fit_width(max_expr_width)
         expr.move_to(box.get_left() + RIGHT * (expr.width / 2 + 0.35))
         group = VGroup(box, expr)
         if step["label"]:
             note = label(step["label"], 15, DIM)
-            note.move_to(box.get_right() + LEFT * (note.width / 2 + 0.3))
-            group.add(note)
+            # Fixture labels can be long ("Rearrange Solving for Current (I)").
+            # Only draw one if it genuinely fits beside the expression: shrink
+            # to the free space, and drop it rather than overprint the formula.
+            free_width = box.width - expr.width - 0.65
+            if free_width > 0.9:
+                if note.width > free_width:
+                    note.scale_to_fit_width(free_width)
+                note.move_to(box.get_right() + LEFT * (note.width / 2 + 0.3))
+                group.add(note)
         rows.add(group)
     rows.arrange(DOWN, buff=0.28)
 
@@ -425,6 +439,229 @@ def build_concept_map(data: dict[str, Any]):
     return group, animations
 
 
+# Plain-text stand-ins for the few LaTeX commands the fixtures use. The
+# renderer is deliberately LaTeX-free, so an unhandled command would be
+# drawn literally.
+_LATEX_CLEANUP = (
+    (chr(92) + 'cdot', 'x'),
+    (chr(92) + 'times', 'x'),
+    (chr(92) + 'Omega', 'ohm'),
+    (chr(92) + 'left', ''),
+    (chr(92) + 'right', ''),
+    (chr(92) + ',', ' '),
+)
+
+_FRAC_RE = re.compile(re.escape(chr(92) + 'frac') + r'\{([^{}]*)\}\{([^{}]*)\}')
+
+
+def _plain_expression(step: dict[str, Any]) -> str:
+    """Readable expression from a step that may only carry LaTeX."""
+    raw = step.get("rawExpression") or step.get("expression") or step.get("latex") or ""
+    text = str(raw)
+    text = _FRAC_RE.sub(lambda m: m.group(1) + ' / ' + m.group(2), text)
+    for command, plain in _LATEX_CLEANUP:
+        text = text.replace(command, plain)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def build_diagram(data: dict[str, Any]):
+    """Composite repair descriptors, plus plain diagrams.
+
+    demo-fixtures ships the repair scene as a rich ``diagram`` composite
+    (equation + hydraulic analogy + I-vs-R graph) rather than the simpler
+    ``equation`` shape the runtime evaluator emits. Both describe the same
+    teaching moment, so the composite is mapped onto the existing equation
+    builder instead of falling through to the generic chip layout, which would
+    have discarded the analogy and the graph entirely.
+    """
+    is_composite = bool(
+        data.get("composite") or data.get("equation") or data.get("analogy")
+    )
+    if not is_composite:
+        return build_fallback(data)
+
+    equation = data.get("equation") or {}
+    steps = [
+        {
+            "expression": _plain_expression(step),
+            "label": str(step.get("title") or step.get("label") or ""),
+        }
+        for step in (equation.get("steps") or [])
+        if isinstance(step, dict)
+    ]
+    steps = [step for step in steps if step["expression"]]
+    if not steps:
+        return build_fallback(data)
+
+    payload: dict[str, Any] = {"steps": steps, "highlight": "result"}
+
+    analogy = data.get("analogy")
+    if isinstance(analogy, dict):
+        # Any hydraulic/pipe analogy renders as the water-pipe comparison.
+        payload["analogy"] = (
+            "water-pipe"
+            if "hydraulic" in str(analogy.get("diagramType", "")).lower()
+            or "pipe" in str(analogy.get("title", "")).lower()
+            else str(analogy.get("diagramType", "analogy"))
+        )
+    elif isinstance(analogy, str):
+        payload["analogy"] = analogy
+
+    if isinstance(data.get("graph"), dict):
+        payload["graph"] = data["graph"]
+
+    return build_equation(payload)
+
+
+def _code_lines(data: dict[str, Any]) -> list[str]:
+    """Source lines from either a ``lines`` list or a single ``code`` string."""
+    lines = data.get("lines")
+    if isinstance(lines, list) and lines:
+        return [str(line) for line in lines]
+    code = data.get("code") or data.get("source") or ""
+    return [line for line in str(code).splitlines()] or []
+
+
+def _execution_steps(data: dict[str, Any], line_count: int) -> list[dict[str, Any]]:
+    """Normalise the execution order into ``[{line, note}]``, 0-based.
+
+    Accepts a bare list of line numbers or a list of objects, and tolerates
+    1-based numbering, which is what a human writing the fixture will reach for.
+    """
+    raw = data.get("executionOrder") or data.get("trace") or []
+    steps: list[dict[str, Any]] = []
+    for entry in raw:
+        if isinstance(entry, int):
+            index, note = entry, ""
+        elif isinstance(entry, dict):
+            index = entry.get("line", entry.get("index"))
+            note = str(entry.get("note", entry.get("label", "")))
+        else:
+            continue
+        if not isinstance(index, int):
+            continue
+        # A trace that never mentions line 0 but does mention line_count is
+        # 1-based; shift it rather than dropping the last line.
+        steps.append({"line": index, "note": note})
+
+    if steps and line_count:
+        indices = [s["line"] for s in steps]
+        if min(indices) >= 1 and max(indices) >= line_count:
+            for step in steps:
+                step["line"] -= 1
+
+    return [s for s in steps if 0 <= s["line"] < line_count]
+
+
+def build_code_trace(data: dict[str, Any]):
+    """A code block with an execution cursor stepping through the run order.
+
+    The Programming counterpart to the circuit and graph builders: shows *code*
+    and *the order it actually runs in*, which is the thing a learner is trying
+    to see. Falls back to the chip layout if there is no code to show.
+
+    The cursor and the step note are driven by **updaters** rather than
+    absolute-position animations. ``construct`` scales and repositions the
+    whole visual after the builder returns, which would leave any coordinates
+    captured at build time pointing at stale positions.
+    """
+    lines = _code_lines(data)
+    if not lines:
+        return build_fallback(data)
+
+    lines = lines[:14]          # a lesson snippet, not a source file
+    steps = _execution_steps(data, len(lines))
+
+    rows = VGroup()
+    for number, source in enumerate(lines, start=1):
+        gutter = Text(f"{number:>2}", font_size=18, color=DIM, font=MONO)
+        # Pango collapses leading spaces, so indentation is drawn explicitly.
+        indent = len(source) - len(source.lstrip(" "))
+        body = Text(source.strip() or " ", font_size=20, color=TEXT, font=MONO)
+        body.next_to(gutter, RIGHT, buff=0.28 + indent * 0.14)
+        rows.add(VGroup(gutter, body))
+    rows.arrange(DOWN, buff=0.16, aligned_edge=LEFT)
+
+    header = label(str(data.get("language", "code")).lower(), 16, DIM)
+    # Reserve a strip inside the panel for the step note, so it can never
+    # collide with the citation line drawn beneath the visual.
+    note_strip = 0.62 if steps else 0.0
+    panel = RoundedRectangle(
+        corner_radius=0.14,
+        width=max(5.8, rows.width + 1.2),
+        height=rows.height + 1.15 + note_strip,
+        stroke_color=BORDER, stroke_width=2,
+        fill_color=PANEL, fill_opacity=1,
+    )
+    rows.move_to(panel.get_center() + UP * (note_strip / 2 + 0.05))
+    header.next_to(panel.get_top(), DOWN, buff=0.2)
+    header.align_to(panel, LEFT).shift(RIGHT * 0.35)
+
+    group = VGroup(panel, header, rows)
+    animations = [
+        FadeIn(panel, run_time=0.4),
+        FadeIn(header, run_time=0.2),
+        Write(rows, run_time=1.0),
+    ]
+
+    if not steps:
+        return group, animations
+
+    # A tracker the animations drive; updaters read live positions from it, so
+    # the cursor stays glued to its line however the group is later scaled.
+    tracker = ValueTracker(float(steps[0]["line"]))
+
+    cursor = RoundedRectangle(
+        corner_radius=0.06, width=1.0, height=0.4,
+        stroke_color=ACCENT, stroke_width=2,
+        fill_color=ACCENT, fill_opacity=0.16,
+    )
+
+    def follow_row(mob):
+        index = int(round(tracker.get_value()))
+        index = max(0, min(len(rows) - 1, index))
+        row = rows[index]
+        mob.stretch_to_fit_width(panel.width - 0.4)
+        mob.stretch_to_fit_height(row.height + 0.18)
+        mob.move_to([panel.get_center()[0], row.get_center()[1], 0])
+
+    follow_row(cursor)
+    cursor.add_updater(follow_row)
+    rows.set_z_index(1)
+    group.add(cursor)
+
+    notes = [step["note"] for step in steps]
+    if any(notes):
+        note = label(notes[0] or " ", 16, WARN)
+        _fit(note, panel.width - 0.6, 0.38)
+
+        def place_note(mob):
+            index = int(round(tracker.get_value()))
+            index = max(0, min(len(steps) - 1, index))
+            wanted = steps[index]["note"] or " "
+            if getattr(mob, "_shown", None) != wanted:
+                mob._shown = wanted
+                replacement = label(wanted, 16, WARN)
+                _fit(replacement, panel.width - 0.6, 0.38)
+                mob.become(replacement)
+            mob.move_to(
+                [panel.get_center()[0], panel.get_bottom()[1] + 0.42, 0]
+            )
+
+        note._shown = notes[0] or " "
+        place_note(note)
+        note.add_updater(place_note)
+        group.add(note)
+
+    animations.append(FadeIn(cursor, run_time=0.3))
+    for step in steps[1:]:
+        animations.append(
+            tracker.animate.set_value(float(step["line"])).set_run_time(0.6)
+        )
+
+    return group, animations
+
+
 def build_fallback(data: dict[str, Any]):
     chips = VGroup()
     values = [v for v in data.values() if isinstance(v, str)][:5]
@@ -444,9 +681,9 @@ BUILDERS = {
     "graph": build_graph,
     "circuit": build_circuit,
     "concept_map": build_concept_map,
-    "diagram": build_fallback,
+    "diagram": build_diagram,
     "timeline": build_fallback,
-    "code_trace": build_fallback,
+    "code_trace": build_code_trace,
 }
 
 
@@ -547,6 +784,11 @@ class LessonVideoScene(Scene):
         citation: str = data.get("citation", "")
         # True when a talking-head clip will be overlaid onto the teacher panel.
         teacher_slot: bool = bool(data.get("teacherSlot", False))
+        # True to drop the drawn cartoon teacher entirely - for when real
+        # avatar clips play in the web client and the video's cartoon would be
+        # a second, competing teacher. Nothing is overlaid in its place, so the
+        # panel is removed and the subject visual gets the full width.
+        hide_teacher: bool = bool(data.get("hideBuiltInTeacher", False))
 
         self.camera.background_color = BG
         half_w = config.frame_width / 2
@@ -561,7 +803,9 @@ class LessonVideoScene(Scene):
         mark_text.move_to(mark.get_center())
         brand = VGroup(mark, mark_text)
 
-        title = label(objective, 24, TEXT)
+        # A very long objective would otherwise be scaled down to unreadable.
+        heading = objective if len(objective) <= 78 else objective[:75].rstrip() + "..."
+        title = label(heading, 24, TEXT)
         _fit(title, half_w * 1.05, 0.6)
 
         header = VGroup(brand, title).arrange(RIGHT, buff=0.35)
@@ -600,12 +844,14 @@ class LessonVideoScene(Scene):
 
         # When a talking head will be composited in, the panel is left empty and
         # the drawn character is omitted rather than hidden behind the video.
-        parts = [panel] if teacher_slot else [panel, teacher, name]
-        teacher_panel = VGroup(*parts)
-        teacher_panel.move_to(
-            LEFT * (half_w - 2.15) + UP * TEACHER_PANEL_Y
-        )
-        self.add(teacher_panel)
+        show_panel = teacher_slot or not hide_teacher
+        if show_panel:
+            parts = [panel] if teacher_slot else [panel, teacher, name]
+            teacher_panel = VGroup(*parts)
+            teacher_panel.move_to(
+                LEFT * (half_w - 2.15) + UP * TEACHER_PANEL_Y
+            )
+            self.add(teacher_panel)
 
         # Mouth movement so the teacher reads as speaking rather than frozen.
         base_height = mouth.height
@@ -617,7 +863,7 @@ class LessonVideoScene(Scene):
             scale = 1.0 + 0.85 * abs(math.sin(t * 6.5))
             mob.stretch_to_fit_height(base_height * scale)
 
-        if not teacher_slot:
+        if show_panel and not teacher_slot:
             mouth.add_updater(animate_mouth)
 
         # ---- Caption band ------------------------------------------------
@@ -654,8 +900,12 @@ class LessonVideoScene(Scene):
 
         # ---- Subject visual ----------------------------------------------
         visual, animations = build_visual(visual_spec)
-        _fit(visual, 9.6, 4.35)
-        visual.move_to(RIGHT * 1.85 + UP * 0.3)
+        if show_panel:
+            _fit(visual, 9.6, 4.35)
+            visual.move_to(RIGHT * 1.85 + UP * 0.3)
+        else:
+            _fit(visual, 12.4, 4.5)
+            visual.move_to(UP * 0.3)
 
         if citation:
             source = label(citation, 15, DIM)
@@ -667,7 +917,11 @@ class LessonVideoScene(Scene):
         self.play(FadeIn(header, run_time=0.4))
         spent = 0.4
         for animation in animations:
+            # `.animate` builders expose run_time as a method rather than a
+            # float, so coerce before doing arithmetic with it.
             run_time = getattr(animation, "run_time", 0.6)
+            if not isinstance(run_time, (int, float)):
+                run_time = 0.6
             if spent + run_time > duration - 0.4:
                 break
             self.play(animation)
@@ -678,6 +932,6 @@ class LessonVideoScene(Scene):
 
         remaining = max(0.3, duration - spent)
         self.wait(remaining)
-        if not teacher_slot:
+        if show_panel and not teacher_slot:
             mouth.clear_updaters()
         caption_holder.clear_updaters()

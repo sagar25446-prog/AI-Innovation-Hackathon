@@ -8,6 +8,7 @@ GuruFlow uses the following third-party components, libraries, and APIs.
 |---------|---------|---------|-------|
 | Google Gemini 2.5 Flash (`gemini-2.5-flash`) | LLM-powered lesson planning and answer evaluation | Google AI Studio Terms | Free tier, optional |
 | D-ID API | Lip-synced avatar video generation | D-ID Terms of Service | **Optional and not wired into the running app.** GuruFlow renders its own teaching video locally; the adapter is retained only as an alternative provider |
+| SadTalker | Offline generation of pre-rendered talking-head avatar clips | Apache-2.0 (<https://github.com/Winfredy/SadTalker>) | Used **offline** to produce clips committed as assets; **not called at runtime** |
 | edge-tts | Text-to-speech synthesis (Microsoft neural voices) | MIT License | Free, no API key needed. **Requires >= 7.2**: 7.0.x returns HTTP 403 after Microsoft changed the Sec-MS-GEC token scheme |
 | gTTS | Fallback text-to-speech | MIT License | Free, used only if edge-tts fails |
 

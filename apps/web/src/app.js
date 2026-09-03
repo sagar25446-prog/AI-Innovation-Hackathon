@@ -445,7 +445,15 @@ function startScene() {
   updateProgress();
 
   // Render the scene through services/media, then drive captions from it.
-  state.media.render(scene, state.plan.learner.language).then((mediaResult) => {
+  // Lesson-moment hints so the media adapter can pick the right avatar clip.
+  state.media
+    .render(scene, state.plan.learner.language, {
+      sceneIndex: state.sceneIndex,
+      isRepair: Boolean(scene.isRepair),
+      answeredCorrectly: Boolean(state.lastEvaluation && state.lastEvaluation.correct),
+      isReport: false,
+    })
+    .then((mediaResult) => {
     state.lastMediaResult = mediaResult;
     state.lastMedia = mediaResult;
     updateMediaBadge(scene, mediaResult);

@@ -10,6 +10,7 @@ the entire SaaS runs from one process with no build step and no API keys.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import tempfile
@@ -106,6 +107,24 @@ async def no_store_for_assets(request, call_next):
 # ---------------------------------------------------------------------------
 # Health and materials
 # ---------------------------------------------------------------------------
+
+
+@app.on_event("startup")
+def seed_demo_videos() -> None:
+    """Warm the video cache from the committed demo assets.
+
+    Demo-day insurance: the judging lesson plays immediately with no render on
+    the critical path. Idempotent, and never overwrites a locally rendered
+    video.
+    """
+    try:
+        summary = video_service.seed_cache_from_repo()
+        if summary.get("seeded"):
+            logging.getLogger("guruflow").info(
+                "Seeded %s demo video(s) into the cache.", summary["seeded"]
+            )
+    except Exception as exc:  # never block startup on a cache warm-up
+        logging.getLogger("guruflow").warning("Video cache seeding skipped: %s", exc)
 
 
 @app.get("/health")
