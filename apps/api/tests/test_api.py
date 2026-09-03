@@ -26,6 +26,31 @@ def client():
         yield test_client
 
 
+@pytest.fixture(autouse=True)
+def deterministic_engine(monkeypatch):
+    """Force the deterministic planner for these endpoint tests.
+
+    These assert the deterministic engine's exact structure (e.g. scene count
+    == 7, page-numbered citations). With a live GEMINI_API_KEY set, the LLM
+    path would return a variable number of scenes and make the assertions
+    flaky. Suppress the key and reset the cached Gemini client so every run is
+    hermetic, exactly as test_planner.py does.
+    """
+    import services.llm as llm
+
+    saved_client = llm._gemini_client
+    saved_attempted = llm._model_attempted
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GURUFLOW_LLM_API_KEY", raising=False)
+    llm._gemini_client = None
+    llm._model_attempted = False
+    try:
+        yield
+    finally:
+        llm._gemini_client = saved_client
+        llm._model_attempted = saved_attempted
+
+
 def make_plan(client, **learner_overrides):
     learner = {
         "level": "beginner",

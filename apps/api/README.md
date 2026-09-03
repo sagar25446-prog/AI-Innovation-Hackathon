@@ -23,9 +23,10 @@ Run from the repository root so `services/` resolves.
 python -m pytest apps/api/tests -q
 ```
 
-73 tests cover the planner, the evaluation branches and the judge-critical API
-path, including a guard against "fake adaptation" (a test that fails if the
-learner's answer does not change what is taught next).
+87 tests cover the planner, the evaluation branches, multi-format upload (PDF /
+DOCX / PPTX), real diagram rendering, long-term student memory, flashcards and
+the judge-critical API path, including a guard against "fake adaptation" (a
+test that fails if the learner's answer does not change what is taught next).
 
 ## Endpoints
 
@@ -34,6 +35,7 @@ learner's answer does not change what is taught next).
 | GET | `/health` | Liveness and mode |
 | POST | `/materials` | Ingest a topic or pasted text into cited sections |
 | GET | `/materials/{materialId}` | Extraction status |
+| POST | `/upload` | Upload a PDF / DOCX / PPTX / TXT and index it |
 | POST | `/lessons/plan` | Plan a lesson for a learner profile |
 | GET | `/lessons/{lessonId}` | Re-fetch a plan |
 | POST | `/lessons/{lessonId}/language` | Re-render in another language, keeping progress |
@@ -41,16 +43,23 @@ learner's answer does not change what is taught next).
 | POST | `/lessons/{lessonId}/checkpoints/{checkpointId}/answer` | Evaluate and adapt |
 | GET | `/lessons/{lessonId}/report` | Learning report for one lesson |
 | GET | `/students/{studentId}/report` | Learning report for a student |
+| GET | `/students/{studentId}/profile` | **Long-term learning profile (persistent)** |
+| GET | `/students/{studentId}/history` | Chronological lesson history |
+| POST | `/lessons/{lessonId}/flashcards` | Generate review flashcards (optionally for weak concepts) |
+| GET | `/diagram` | Render a circuit/equation/graph PNG |
 
 ## Modules
 
 | Module | Responsibility |
 | --- | --- |
 | `services/ingestion` | Topic/text -> page-numbered sections (built-in NCERT Ch.12 corpus) |
-| `services/rag` | Keyword retrieval + grounding confidence |
-| `services/planner` | Concept catalogue -> `Scene` objects adapted to level/language/time |
+| `services/rag` | Keyword + LangChain retrieval, grounding confidence |
+| `services/planner` | Concept catalogue -> `Scene` objects adapted to level/language/time/personality |
+| `services/planner/flashcards` | Deterministic review-card generation from scenes |
+| `services/planner/persona` | Multiple teacher personalities (patient / socratic / coach) |
 | `services/evaluation` | Answer classification, misconception diagnosis, repair scene, report |
 | `apps/api/store.py` | `LessonRepository` seam + in-memory implementation |
+| `apps/api/student_memory.py` | File-backed long-term student memory |
 | `apps/api/models.py` | Pydantic projection of the JSON contract |
 
 ## Configuration

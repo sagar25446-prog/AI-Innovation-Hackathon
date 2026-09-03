@@ -214,4 +214,55 @@ export class GuruFlowClient {
     }
     return report;
   }
+
+  async getProfile(studentId) {
+    if (this.isLive) {
+      try {
+        return await request(`/students/${studentId}/profile`);
+      } catch (err) {
+        if (String(err.message).startsWith('404')) return null;
+        throw err;
+      }
+    }
+    // Fixture mode: a small, sensible long-term profile built from this lesson.
+    return {
+      studentId,
+      lessonsCompleted: 1,
+      avgScore: this.progress.passed ? 0.9 : 0.5,
+      weakConcepts: this.progress.misconception
+        ? ['ohms-law-practice', 'ohms-law-application']
+        : [],
+      recurringMisconceptions: this.progress.misconception
+        ? [this.progress.misconception.id]
+        : [],
+      misconceptions: this.progress.misconception
+        ? [{ id: this.progress.misconception.id, status: 'open', count: 1 }]
+        : [],
+      lessons: [
+        {
+          lessonId: 'demo',
+          topic: "Ohm's Law",
+          score: this.progress.passed ? 0.9 : 0.5,
+          weekName: 'This session',
+        },
+      ],
+    };
+  }
+
+  async getFlashcards(lessonId, conceptIds) {
+    if (this.isLive) {
+      return request(`/lessons/${lessonId}/flashcards`, {
+        method: 'POST',
+        body: JSON.stringify({ conceptIds: conceptIds || undefined }),
+      });
+    }
+    const cards = [
+      { conceptId: 'electric-current', front: 'What is current?', back: 'The flow of electric charge, measured in amperes (A).' },
+      { conceptId: 'voltage', front: 'What is voltage?', back: 'The electric push between two points that drives current.' },
+      { conceptId: 'resistance', front: 'What is resistance?', back: 'It opposes current flow, measured in ohms (Ω).' },
+      { conceptId: 'ohms-law', front: 'State Ohm\u2019s Law.', back: 'V = I × R. Voltage equals current times resistance.' },
+    ];
+    if (conceptIds) return { cards: cards.filter((c) => conceptIds.includes(c.conceptId)) };
+    return { cards };
+  }
 }

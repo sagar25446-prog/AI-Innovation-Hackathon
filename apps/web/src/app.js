@@ -52,7 +52,7 @@ const MISCONCEPTION_EXPLAIN = {
  * ------------------------------------------------------------------ */
 
 function showScreen(name) {
-  ['onboarding', 'plan', 'classroom', 'report'].forEach((screen) => {
+  ['onboarding', 'plan', 'classroom', 'report', 'profile'].forEach((screen) => {
     $(`screen-${screen}`).hidden = screen !== name;
   });
   $('restart-btn').hidden = name === 'onboarding';
@@ -673,8 +673,168 @@ async function showReport() {
       next.append(label, title);
       body.appendChild(next);
     }
+
+    $('profile-btn').hidden = false;
   } catch (err) {
     body.textContent = `Could not load the report: ${err.message}`;
+    $('profile-btn').hidden = true;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Learning profile dashboard
+ * ------------------------------------------------------------------ */
+
+function profileChip(label, value, cls) {
+  const chip = document.createElement('div');
+  chip.className = `profile-stat ${cls || ''}`;
+  const l = document.createElement('span');
+  l.className = 'profile-stat-label';
+  l.textContent = label;
+  const v = document.createElement('span');
+  v.className = 'profile-stat-value';
+  v.textContent = value != null ? value : '—';
+  chip.append(l, v);
+  return chip;
+}
+
+function profileTrendBar(label, value) {
+  const row = document.createElement('div');
+  row.className = 'trend-row';
+  const name = document.createElement('span');
+  name.className = 'trend-label';
+  name.textContent = label;
+  const track = document.createElement('div');
+  track.className = 'trend-track';
+  const fill = document.createElement('div');
+  fill.className = 'trend-fill';
+  const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
+  fill.style.width = `${pct}%`;
+  fill.textContent = pct < 40 ? `revisit` : pct < 70 ? 'steady' : 'mastered';
+  track.appendChild(fill);
+  row.append(name, track);
+  return row;
+}
+
+function profileList(mastery) {
+  const wrap = document.createElement('div');
+  wrap.className = 'trend-wrap';
+  const entries = Object.entries(mastery || {}).sort((a, b) => a[1] - b[1]);
+  if (!entries.length) {
+    const none = document.createElement('p');
+    none.className = 'hint';
+    none.textContent = 'No mastery data yet. Complete a lesson to start tracking.';
+    wrap.appendChild(none);
+    return wrap;
+  }
+  entries.forEach(([concept, value]) => wrap.appendChild(profileTrendBar(concept, value)));
+  return wrap;
+}
+
+function profileFlashcards(cards) {
+  const wrap = document.createElement('div');
+  wrap.className = 'flashcard-list';
+  const list = (cards || []).slice(0, 6);
+  if (!list.length) {
+    const none = document.createElement('p');
+    none.className = 'hint';
+    none.textContent = 'No review cards yet.';
+    wrap.appendChild(none);
+    return wrap;
+  }
+  list.forEach((card) => {
+    const item = document.createElement('details');
+    item.className = 'flashcard';
+    const summary = document.createElement('summary');
+    summary.textContent = card.front;
+    const back = document.createElement('p');
+    back.textContent = card.back;
+    item.append(summary, back);
+    wrap.appendChild(item);
+  });
+  return wrap;
+}
+
+function elem(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text != null) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+
+function profileSection(title, child) {
+  const section = document.createElement('div');
+  section.className = 'report-section';
+  section.appendChild(elem('h4', title));
+  section.appendChild(child);
+  return section;
+}
+
+async function showProfile() {
+  stopTimer();
+  showScreen('profile');
+  const body = $('profile-body');
+  body.textContent = 'Loading your learning profile...';
+
+  const studentId = (state.plan && state.plan.learner && state.plan.learner.studentId) || 'student-demo';
+
+  try {
+    const profile = await state.client.getProfile(studentId);
+    if (!profile) {
+      body.textContent = 'No long-term profile for this student yet. Take a lesson to start tracking.';
+      return;
+    }
+    body.textContent = '';
+
+    // Header stats
+    const statsRow = document.createElement('div');
+    statsRow.className = 'stats-row';
+    const score = profile.avgScore != null ? `${Math.round(profile.avgScore * 100)}%` : '—';
+    statsRow.append(
+      profileChip('Lessons completed', profile.lessonsCompleted ?? (profile.lessons || []).length, 'is-strong'),
+      profileChip('Average score', score, 'is-strong'),
+      profileChip('Recurring misconceptions', (profile.recurringMisconceptions || []).length, 'is-weak'),
+    );
+    body.appendChild(statsRow);
+
+    // Concept mastery trend
+    if (profile.conceptMastery) {
+      body.appendChild(profileSection('Concept mastery', profileList(profile.conceptMastery)));
+    }
+
+    // Weak concepts
+    const weak = profile.weakConcepts || [];
+    const strong = (profile.strongConcepts || []).filter((c) => !weak.includes(c));
+    body.appendChild(profileSection('Needs revision', chipSection('', weak, 'is-weak')));
+    body.appendChild(profileSection('Strong concepts', chipSection('', strong, 'is-strong')));
+
+    // Recurring misconceptions
+    if ((profile.recurringMisconceptions || []).length) {
+      const list = document.createElement('ul');
+      list.className = 'action-list';
+      profile.recurringMisconceptions.forEach((id) => {
+        list.appendChild(elem('li', id));
+      });
+      body.appendChild(profileSection('Patterns to watch', list));
+    }
+
+    // Review flashcards for weak concepts
+    const flashTargets = weak.length ? weak : (profile.weakConcepts || []);
+    const flash = await state.client.getFlashcards(state.plan ? state.plan.id : profile.lessonId, flashTargets);
+    body.appendChild(profileSection('Review flashcards', profileFlashcards(flash.cards)));
+
+    // Lesson history
+    if ((profile.lessons || []).length) {
+      const list = document.createElement('ul');
+      list.className = 'action-list';
+      profile.lessons.slice(0, 8).reverse().forEach((lesson) => {
+        const pct = Math.round((lesson.score || 0) * 100);
+        list.appendChild(elem('li', `${lesson.topic} - ${pct}%${lesson.weekName ? ` (${lesson.weekName})` : ''}`));
+      });
+      body.appendChild(profileSection('Lesson history', list));
+    }
+  } catch (err) {
+    body.textContent = `Could not load the profile: ${err.message}`;
   }
 }
 
@@ -765,6 +925,8 @@ function init() {
   $('demo-btn').addEventListener('click', loadDemoPreset);
   $('restart-btn').addEventListener('click', restart);
   $('report-restart').addEventListener('click', restart);
+  $('profile-btn').addEventListener('click', showProfile);
+  $('profile-back').addEventListener('click', () => showScreen('report'));
 
   state.client.detectMode().then(setModeBadge);
 }

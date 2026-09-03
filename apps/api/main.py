@@ -43,6 +43,7 @@ from apps.api.models import (  # noqa: E402
     PlanRequest,
 )
 from apps.api.store import InMemoryLessonRepository, LessonSession  # noqa: E402
+from apps.api.student_memory import StudentMemoryStore  # noqa: E402
 from services.evaluation import (  # noqa: E402
     CHECKPOINT_CONCEPT_ID,
     build_report,
@@ -50,6 +51,8 @@ from services.evaluation import (  # noqa: E402
 )
 from services.ingestion import ingest_text, ingest_topic  # noqa: E402
 from services.planner import plan_lesson  # noqa: E402
+from services.planner.flashcards import generate_flashcards  # noqa: E402
+from services.planner.persona import persona_feedback  # noqa: E402
 
 WEB_DIR = REPO_ROOT / "apps" / "web"
 
@@ -74,6 +77,9 @@ app.add_middleware(
 )
 
 repository = InMemoryLessonRepository()
+
+# Long-term, cross-session student memory. Survives server restarts.
+student_memory = StudentMemoryStore()
 
 
 @app.middleware("http")
@@ -251,6 +257,15 @@ def answer_checkpoint(
         request.answer, language=language, attempt=attempt, option_id=request.optionId
     )
 
+    # Apply the learner's chosen teacher personality to the feedback tone.
+    personality = session.plan["learner"].get("personality")
+    if personality:
+        tone = persona_feedback(
+            personality, encouraged=bool(result.get("correct"))
+        )
+        if tone:
+            result["feedback"] = f"{tone}{result['feedback']}"
+
     session.set_mastery(CHECKPOINT_CONCEPT_ID, result["mastery"])
 
     if result["nextAction"] == "repair":
@@ -290,7 +305,10 @@ def lesson_report(lesson_id: str) -> dict[str, Any]:
     session = repository.get_session(lesson_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Lesson not found")
-    return _report_for_session(session)
+    report = _report_for_session(session)
+    # Fold this finished lesson into the student's long-term memory.
+    student_memory.record_lesson(session, report)
+    return report
 
 
 @app.get("/students/{student_id}/report", response_model=LearningReport)
@@ -298,7 +316,67 @@ def student_report(student_id: str) -> dict[str, Any]:
     sessions = repository.sessions_for_student(student_id)
     if not sessions:
         raise HTTPException(status_code=404, detail="No lessons for this student")
-    return _report_for_session(sessions[-1])
+    report = _report_for_session(sessions[-1])
+    # Fold into long-term memory so the profile reflects the latest lesson.
+    student_memory.record_lesson(sessions[-1], report)
+    return report
+
+
+# ---------------------------------------------------------------------------
+# Long-term student memory and review features
+# ---------------------------------------------------------------------------
+
+
+@app.get("/students/{student_id}/profile")
+def student_profile(student_id: str) -> dict[str, Any]:
+    """Return a student's long-term learning profile across all lessons.
+
+    Survives server restarts (file-backed). Includes running concept mastery,
+    recurring misconceptions and lesson history for the dashboard.
+    """
+    profile = student_memory.get_profile(student_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="No learning profile yet")
+    return profile
+
+
+@app.get("/students/{student_id}/history")
+def student_history(student_id: str) -> dict[str, Any]:
+    """Return the chronological lesson history for a student."""
+    profile = student_memory.get_profile(student_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="No learning history yet")
+    return {"studentId": student_id, "lessons": profile.get("lessons", [])}
+
+
+@app.post("/lessons/{lesson_id}/flashcards")
+def lesson_flashcards(lesson_id: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Generate review flashcards from a lesson's scenes.
+
+    Optional body may select a ``language`` and/or filter ``conceptIds`` (e.g.
+    the learner's weak concepts from long-term memory). The core Ohm's Law
+    formula card is always included so a review is complete.
+    """
+    session = repository.get_session(lesson_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+
+    body = body or {}
+    language = body.get("language") or session.plan["learner"]["language"]
+    concept_ids = body.get("conceptIds")
+
+    cards = generate_flashcards(
+        session.plan["scenes"],
+        language=language,
+        concept_ids=concept_ids,
+    )
+    return {
+        "lessonId": lesson_id,
+        "studentId": session.student_id,
+        "language": language,
+        "count": len(cards),
+        "cards": cards,
+    }
 
 
 # ---------------------------------------------------------------------------

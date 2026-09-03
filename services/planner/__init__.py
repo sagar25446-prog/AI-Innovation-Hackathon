@@ -19,6 +19,7 @@ from typing import Any
 
 from services.ingestion import Material
 from services.planner.concepts import CONCEPTS_BY_ID
+from services.planner.persona import apply_persona_narration
 from services.rag import (
     best_citations,
     grounding_status,
@@ -141,11 +142,16 @@ def _plan_lesson_deterministic(
         concept = CONCEPTS_BY_ID[concept_id]
         results = retrieve(concept["query"], material.sections, material.document_id)
 
+        narration = build_narration(concept, language, level)
+        narration = apply_persona_narration(
+            narration, learner.get("personality"), language, level
+        )
+
         scene: dict[str, Any] = {
             "id": f"scene-{index + 1}-{concept_id}",
             "conceptId": concept_id,
             "objective": concept["objective"][language],
-            "narration": build_narration(concept, language, level),
+            "narration": narration,
             "visual": concept["visual"],
             "citations": best_citations(results),
             "durationSeconds": durations[index],

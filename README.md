@@ -81,6 +81,35 @@ curl -X POST http://127.0.0.1:8077/diagram \
 Backed by `python-docx`, `python-pptx` and `matplotlib` (all pinned in
 `apps/api/requirements.txt`).
 
+### Long-term student memory, flashcards and personalities
+
+Beyond a single lesson, GuruFlow **remembers each student across sessions** and
+offers review and teaching-style options:
+
+- **Long-term student memory** — every finished lesson is folded into a
+  file-backed profile (`apps/api/student_memory.py`). It tracks per-concept
+  mastery (running average), recurring misconceptions and a chronological
+  lesson history, and survives server restarts. Exposed as
+  `GET /students/{studentId}/profile` and `GET /students/{studentId}/history`.
+- **Flashcard generation** — `POST /lessons/{lessonId}/flashcards` turns a
+  lesson's scenes into review cards (front/back, in the learner's language),
+  always including the core Ohm's Law formula card. Filter to the learner's
+  weak concepts via `{"conceptIds": [...]}`.
+- **Multiple teacher personalities** — a learner can pick a `personality`
+  (`patient`, `socratic` or `coach`) in their profile. It reframes narration
+  tone and checkpoint feedback without changing what is taught, so the default
+  stays the deterministic hero path.
+- **Learning profile dashboard** — the web app's report screen now links to a
+  persistent dashboard (`screen-profile`) that visualizes concept mastery,
+  recurring patterns, weak/strong concepts, review flashcards and lesson
+  history, pulled from the profile endpoints.
+
+```bash
+curl http://127.0.0.1:8077/students/student-demo/profile
+curl -X POST http://127.0.0.1:8077/lessons/LESSON_ID/flashcards \
+  -H "Content-Type: application/json" -d '{"conceptIds":["ohms-law"]}'
+```
+
 See [the integrated product](docs/INTEGRATED_PRODUCT.md) for the architecture,
 the flagship feature and the SWOT analysis.
 
