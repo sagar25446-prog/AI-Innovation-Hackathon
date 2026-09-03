@@ -117,9 +117,8 @@ def mux_audio_video(
 def to_wav_16k_mono(source: str | Path, output: str | Path) -> bool:
     """Convert audio to 16 kHz mono WAV.
 
-    Whisper - which MuseTalk uses for audio feature extraction - expects this
-    format. edge-tts hands us a 24 kHz MP3, so the conversion is mandatory
-    rather than cosmetic.
+    SadTalker expects a plain PCM wav and edge-tts hands us a 24 kHz MP3, so
+    the conversion is mandatory rather than cosmetic.
     """
     binary = ffmpeg_path()
     if binary is None:

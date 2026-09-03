@@ -4,7 +4,7 @@ Adds a lip-synced human teacher to the lesson video, composited into the
 teacher panel. Everything else keeps working if you never set this up: with no
 configuration the drawn avatar is used and no code path changes.
 
-Target hardware: **6 GB VRAM (RTX 4050)**.
+Engine: **SadTalker**. Target hardware: **RTX 4050, 6 GB VRAM**.
 
 ---
 
@@ -22,124 +22,105 @@ agreed. A lip-synced video of an identifiable person saying words they never
 said is a deepfake whatever the intent, and putting one in front of judges as
 your product's teacher is a reputational and legal problem, not a shortcut.
 
-A synthetic portrait costs nothing and removes the question entirely. The API
-returns this notice in `/health` under `video.talkingHead.portraitRights` so it
-stays visible to whoever wires this up.
+The API returns this notice at `/health` under
+`video.talkingHead.portraitRights` so it stays visible to whoever wires it up.
 
 ---
 
-## 1. Model choice
+## 1. Why SadTalker here
 
 | Model | VRAM | Verdict |
 | --- | --- | --- |
-| **MuseTalk 1.5** | ~4-6 GB | **Use this.** Inpaints a 256x256 mouth region on an existing video |
-| LivePortrait | <1 GB | Good for making the *idle* clip from a still |
-| SadTalker | ~8 GB | Higher quality single-shot, slower; viable if you have headroom |
-| EchoMimic V2 / Hallo 2 | 12-24 GB | Out of reach on 6 GB |
+| **SadTalker** | ~4-6 GB at `crop`/256 | **In use.** Still image in, animated talking head out |
+| MuseTalk | ~4-6 GB | Cheaper, but mouth-only inpainting and weak sync on Hinglish audio |
+| EchoMimic V2 / AniPortrait / LatentSync | 12-24 GB | Better, but out of reach on 6 GB |
 
-MuseTalk only moves the mouth, so head motion has to come from the input video.
-That is why an idle clip is required rather than a still image.
+**SadTalker takes a still image, not a video.** It synthesises head motion,
+blinks and lip movement itself, so the LivePortrait "idle clip" step an
+inpainting model needs is gone. One asset instead of two.
 
----
-
-## 2. Assets
-
-### Portrait
-Generate a front-facing teacher portrait, neutral expression, mouth closed,
-even lighting, face filling a good part of the frame. Front-facing matters:
-MuseTalk's face alignment degrades badly on three-quarter angles.
-
-### Idle video (this is the input MuseTalk drives)
-Animate the still into a 10-second loop with small movements - blinking,
-breathing, slight nods. **LivePortrait runs locally in well under 1 GB VRAM**,
-so it will not disturb your budget. Kling AI's free tier also works.
-
-Keep it seamless: the clip is looped under longer scenes.
-
-```
-Portrait (still) --LivePortrait--> idle_teacher.mp4 --MuseTalk + narration--> talking head
-```
-
-### Audio
-Already handled. `services/voice` produces narration in the female neural voice
-(`hi-IN-SwaraNeural` / `en-IN-NeerjaNeural`), and GuruFlow converts it to the
-16 kHz mono WAV Whisper needs - **you do not need to do this by hand.**
+The trade-off: SadTalker *generates* instead of *inpainting*, so it is slower -
+**minutes per scene, not seconds**. Pre-render; never generate live in a demo.
 
 ---
 
-## 3. Install MuseTalk
+## 2. The portrait
 
-In its **own** environment. MuseTalk pins torch, mmcv and mmpose versions that
-will fight with the API's dependencies if installed together.
+One still image. That is the whole asset list.
+
+* front-facing, both eyes visible - three-quarter angles break face alignment
+* neutral expression, mouth closed
+* even lighting, no hard shadow across the mouth
+* face filling a good part of the frame
+* 512x512 or larger, PNG or JPG
+
+**Do not bother with a 4K portrait.** The teacher panel is ~248x292 px inside a
+720p frame, and SadTalker runs at 256x256 in the low-VRAM configuration, so
+extra resolution is thrown away.
+
+---
+
+## 3. Install SadTalker
+
+In its **own** environment - SadTalker pins torch and face-detection versions
+that will fight with the API's dependencies.
 
 ```bash
-git clone https://github.com/TMElyralab/MuseTalk.git
-cd MuseTalk
-conda create -n musetalk python=3.10 -y
-conda activate musetalk
+git clone https://github.com/OpenTalker/SadTalker.git
+cd SadTalker
+conda create -n sadtalker python=3.10 -y
+conda activate sadtalker
 ```
 
-**Install torch first, with the CUDA build.** `pip install -r requirements.txt`
-alone pulls a CPU-only torch and MuseTalk then fails at runtime:
+**Install CUDA torch first.** `pip install -r requirements.txt` on its own
+pulls a CPU-only build and SadTalker then runs at a crawl:
 
 ```bash
 pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
 pip install -r requirements.txt
 ```
 
-DWPose needs the OpenMMLab stack, which does not install cleanly from plain
-pip:
-
-```bash
-pip install --no-cache-dir -U openmim
-mim install mmengine "mmcv==2.0.1" "mmdet==3.1.0" "mmpose==1.1.0"
-```
-
 ### ffmpeg
-The winget package is **`Gyan.FFmpeg`**; a bare `winget install ffmpeg` is
-ambiguous and may pick the wrong package:
 
 ```bash
 winget install Gyan.FFmpeg
 ```
 
-GuruFlow itself does not need this - it uses the `imageio-ffmpeg` binary - but
-MuseTalk calls `ffmpeg` from PATH.
+The winget package id is `Gyan.FFmpeg`; a bare `winget install ffmpeg` is
+ambiguous. GuruFlow itself does not need this - it uses the `imageio-ffmpeg`
+binary - but SadTalker calls `ffmpeg` from PATH.
 
-### Weights
+### Checkpoints
 
 ```bash
 # Windows
-download_weights.bat
+download_models.bat
 # Linux/macOS
-sh ./download_weights.sh
+bash scripts/download_models.sh
 ```
 
 Expected layout:
 
 ```
-./models/
-├── musetalk
-├── musetalkV15
-├── dwpose
-├── face-parse-bisent
-├── resnet18
-├── sd-vae-ft-mse
-└── whisper
+./checkpoints/
+├── mapping_00109-model.pth.tar
+├── mapping_00229-model.pth.tar
+├── SadTalker_V0.0.2_256.safetensors
+└── SadTalker_V0.0.2_512.safetensors
+./gfpgan/weights/          <- only needed if you enable the enhancer
 ```
 
-`musetalkV15` is the 1.5 weights directory; older guides list only `musetalk`.
-If the scripts fail behind a proxy, download from the Hugging Face repos listed
-in MuseTalk's README and place them by hand.
+If the scripts fail behind a proxy, the same files are on the SadTalker
+Hugging Face repo; place them by hand.
 
-### Verify before wiring it up
+### Verify standalone before wiring it up
 
 ```bash
-python -m scripts.inference --inference_config configs/inference/test.yaml --version v15
+python inference.py --driven_audio examples/driven_audio/bus_chinese.wav --source_image examples/source_image/full_body_1.png --result_dir ./results --preprocess crop --size 256 --still
 ```
 
-Get that working standalone first. Debugging MuseTalk through GuruFlow's
-subprocess layer is far more painful.
+Get this working **first**. Debugging SadTalker through GuruFlow's subprocess
+layer is far more painful than debugging it directly.
 
 ---
 
@@ -147,14 +128,13 @@ subprocess layer is far more painful.
 
 ```bash
 set GURUFLOW_TALKING_HEAD=1
-set GURUFLOW_MUSETALK_DIR=C:\path\to\MuseTalk
-set GURUFLOW_MUSETALK_PYTHON=C:\Users\you\miniconda3\envs\musetalk\python.exe
-set GURUFLOW_TEACHER_IDLE_VIDEO=C:\path\to\idle_teacher.mp4
-set GURUFLOW_MUSETALK_BBOX_SHIFT=0
+set GURUFLOW_SADTALKER_DIR=C:\path\to\SadTalker
+set GURUFLOW_SADTALKER_PYTHON=C:\Users\you\miniconda3\envs\sadtalker\python.exe
+set GURUFLOW_TEACHER_PORTRAIT=C:\path\to\teacher.png
 ```
 
-`GURUFLOW_MUSETALK_PYTHON` must be the **musetalk env's** interpreter - that is
-the whole point of the separate environment.
+`GURUFLOW_SADTALKER_PYTHON` must be the **sadtalker env's** interpreter - that
+is the entire point of the separate environment.
 
 Check it took:
 
@@ -165,15 +145,20 @@ curl http://127.0.0.1:8077/health
 `video.talkingHead.usable` should be `true`. If not, `problems` names exactly
 what is missing.
 
-### bbox_shift - the quality knob
+### Tuning
 
-MuseTalk's single most important parameter. It shifts the detected mouth box:
+| Variable | Default | Use |
+| --- | --- | --- |
+| `GURUFLOW_SADTALKER_EXPRESSION` | `1.0` | Mouth openness. Raise toward `1.3` if lips look under-articulated; above ~1.5 it over-acts |
+| `GURUFLOW_SADTALKER_STILL` | `1` | Suppresses head sway. Keep on: motion drifts the face inside a small panel |
+| `GURUFLOW_SADTALKER_PREPROCESS` | `crop` | `crop` is the low-VRAM path. `full` needs more VRAM and pastes back into the whole image, which the panel crops off anyway |
+| `GURUFLOW_SADTALKER_SIZE` | `256` | `512` doubles VRAM and time for detail the panel cannot display |
+| `GURUFLOW_SADTALKER_ENHANCER` | *(off)* | `gfpgan` sharpens faces but roughly doubles VRAM and runtime. Leave off on 6 GB |
+| `GURUFLOW_TALKING_HEAD_TIMEOUT` | `1800` | Raise if long scenes are being killed mid-render |
 
-* mouth looks under-opened / mumbling -> try `-5`, `-9`
-* jaw looks unnaturally wide -> try `+5`
-
-It is portrait-specific. Expect to try three or four values. MuseTalk prints a
-suggested range for your input on first run.
+**If you hit CUDA out-of-memory:** confirm `preprocess=crop` and `size=256`,
+turn the enhancer off, close other GPU applications, and set
+`GURUFLOW_VIDEO_QUALITY=low` so scenes are shorter to encode.
 
 ---
 
@@ -183,9 +168,9 @@ suggested range for your input on first run.
 Scene ─┬─ visual  ──> Manim ──> lesson frame, teacher panel left empty
        ├─ narration ─> edge-tts (female) ──> mp3 ──> 16 kHz mono wav
        │                                  │
-       │                                  └──> MuseTalk(idle video, wav) ──> head.mp4
-       │                                                                       │
-       └───────────────> ffmpeg overlay head into the panel rect <─────────────┘
+       │                                  └──> SadTalker(portrait, wav) ──> head.mp4
+       │                                                                      │
+       └───────────────> ffmpeg overlay head into the panel rect <────────────┘
                                     │
                                     └──> ffmpeg mux narration ──> cached scene.mp4
 ```
@@ -194,39 +179,40 @@ Scene ─┬─ visual  ──> Manim ──> lesson frame, teacher panel left e
 for the panel rectangle, so the Manim scene and the compositor cannot disagree.
 
 Everything is cached on a content hash, and the talking-head setting is part of
-that hash, so switching it on does not serve stale drawn-avatar videos.
+that hash, so switching engines does not serve stale videos.
 
-**Failure is never fatal.** If MuseTalk is missing, times out, or errors, the
-scene falls back to the drawn avatar and the lesson plays normally.
+**Failure is never fatal.** Missing checkout, CUDA OOM, timeout, or a failed
+overlay all fall back to the drawn avatar and the lesson plays normally.
 
 ---
 
 ## 6. Performance on a 4050
 
-MuseTalk runs roughly real-time-ish on a desktop 30-series and slower on a
-6 GB mobile card. A 15-second scene may take 30-90 seconds the first time.
+SadTalker generates every frame, so budget **1-4 minutes per scene** at
+`crop`/256 on a 6 GB mobile card. A 7-scene lesson plus two repair scenes is a
+coffee break, not a demo-time operation.
 
-**Pre-render before demonstrating.** The web client already calls
-`POST /lessons/{id}/video/prerender` when a lesson starts, which warms every
-scene plus both repair scenes. Give it a few minutes, then present from a warm
-cache. Do not generate live in front of judges.
-
-To iterate faster while tuning `bbox_shift`:
+Warm the cache before presenting - the web client already fires this when a
+lesson starts:
 
 ```bash
-set GURUFLOW_VIDEO_QUALITY=low
+curl -X POST http://127.0.0.1:8077/lessons/<LESSON_ID>/video/prerender
 ```
+
+While tuning `expression_scale`, iterate on one scene with
+`GURUFLOW_VIDEO_QUALITY=low` rather than re-rendering the whole lesson.
 
 ---
 
 ## 7. Honest limitations
 
-* MuseTalk moves the mouth only. Head motion, blinks and expression all come
-  from the idle clip, so a stiff idle clip produces a stiff teacher.
-* Lip-sync quality on romanised Hinglish is weaker than on English, because
-  Whisper's phoneme features are trained on natural language, not
-  transliteration.
-* The composited head is 248x292 px inside a 1280x720 frame. Detail beyond
-  that is wasted, so do not spend GPU time on a 4K portrait.
-* Adding this makes the demo depend on a GPU. Keep the drawn-avatar path
-  working, and demo from it if the machine is not yours.
+* SadTalker at 256 is soft. Fine inside a 248 px panel, poor if you ever scale
+  the teacher up to fill the frame.
+* Lip-sync on romanised Hinglish is weaker than on English, because the audio
+  features are trained on natural language rather than transliteration. This
+  affects every model in this class, SadTalker included - it is not a reason to
+  keep switching engines.
+* `--still` trades liveliness for stability. Without it the head drifts inside
+  the panel; with it the teacher is calm but slightly static.
+* Adding this makes the demo depend on your GPU. Keep the drawn-avatar path
+  working and demo from it if the machine is not yours.

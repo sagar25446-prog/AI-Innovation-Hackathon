@@ -245,8 +245,8 @@ def test_talking_head_is_off_and_harmless_by_default(monkeypatch):
 
     for key in (
         "GURUFLOW_TALKING_HEAD",
-        "GURUFLOW_MUSETALK_DIR",
-        "GURUFLOW_TEACHER_IDLE_VIDEO",
+        "GURUFLOW_SADTALKER_DIR",
+        "GURUFLOW_TEACHER_PORTRAIT",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -258,12 +258,12 @@ def test_talking_head_reports_what_is_missing(monkeypatch):
     from services.video import talking_head
 
     monkeypatch.setenv("GURUFLOW_TALKING_HEAD", "1")
-    monkeypatch.delenv("GURUFLOW_MUSETALK_DIR", raising=False)
-    monkeypatch.delenv("GURUFLOW_TEACHER_IDLE_VIDEO", raising=False)
+    monkeypatch.delenv("GURUFLOW_SADTALKER_DIR", raising=False)
+    monkeypatch.delenv("GURUFLOW_TEACHER_PORTRAIT", raising=False)
 
     problems = talking_head.config().problems()
-    assert any("MUSETALK_DIR" in p for p in problems)
-    assert any("IDLE_VIDEO" in p for p in problems)
+    assert any("SADTALKER_DIR" in p for p in problems)
+    assert any("TEACHER_PORTRAIT" in p for p in problems)
     assert "GURUFLOW_TALKING_HEAD" not in " ".join(problems)
 
 
@@ -303,3 +303,56 @@ def test_teacher_panel_rect_is_inside_the_frame_and_h264_safe():
         assert w % 2 == 0 and h % 2 == 0
         # The panel scales with the frame, so it stays roughly a fifth wide.
         assert 0.15 < w / width < 0.28
+
+
+def test_sadtalker_defaults_suit_a_6gb_card():
+    """crop + 256 is the low-VRAM path, and the panel is only ~248px wide."""
+    from services.video import talking_head
+
+    cfg = talking_head.TalkingHeadConfig.from_env()
+    assert cfg.preprocess == "crop"
+    assert cfg.size == 256
+    assert cfg.still is True
+    # GFPGAN roughly doubles VRAM and runtime for detail the panel cannot show.
+    assert cfg.enhancer is None
+
+
+def test_portrait_must_be_an_image_not_a_video(monkeypatch, tmp_path):
+    """SadTalker takes a still; passing an idle video is a common mix-up."""
+    from services.video import talking_head
+
+    sadtalker = tmp_path / "SadTalker"
+    sadtalker.mkdir()
+    (sadtalker / "inference.py").write_text("", encoding="utf-8")
+    clip = tmp_path / "idle.mp4"
+    clip.write_bytes(b"x")
+
+    monkeypatch.setenv("GURUFLOW_TALKING_HEAD", "1")
+    monkeypatch.setenv("GURUFLOW_SADTALKER_DIR", str(sadtalker))
+    monkeypatch.setenv("GURUFLOW_TEACHER_PORTRAIT", str(clip))
+
+    problems = talking_head.config().problems()
+    assert any("still image" in p for p in problems)
+
+
+def test_config_accepts_a_complete_setup(monkeypatch, tmp_path):
+    from services.video import talking_head
+
+    sadtalker = tmp_path / "SadTalker"
+    sadtalker.mkdir()
+    (sadtalker / "inference.py").write_text("", encoding="utf-8")
+    portrait = tmp_path / "teacher.png"
+    portrait.write_bytes(b"x")
+
+    monkeypatch.setenv("GURUFLOW_TALKING_HEAD", "1")
+    monkeypatch.setenv("GURUFLOW_SADTALKER_DIR", str(sadtalker))
+    monkeypatch.setenv("GURUFLOW_TEACHER_PORTRAIT", str(portrait))
+
+    assert talking_head.config().problems() == []
+    assert talking_head.available() is True
+
+
+def test_status_names_the_engine():
+    from services.video import talking_head
+
+    assert talking_head.status()["engine"] == "sadtalker"
