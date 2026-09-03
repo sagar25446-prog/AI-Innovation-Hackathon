@@ -7,8 +7,9 @@ GuruFlow uses the following third-party components, libraries, and APIs.
 | Service | Purpose | License | Usage |
 |---------|---------|---------|-------|
 | Google Gemini 2.5 Flash (`gemini-2.5-flash`) | LLM-powered lesson planning and answer evaluation | Google AI Studio Terms | Free tier, optional |
-| D-ID API | Lip-synced avatar video generation | D-ID Terms of Service | Free trial (5 min video), optional |
-| edge-tts | Text-to-speech synthesis | MIT License | Free, no API key needed |
+| D-ID API | Lip-synced avatar video generation | D-ID Terms of Service | **Optional and not wired into the running app.** GuruFlow renders its own teaching video locally; the adapter is retained only as an alternative provider |
+| edge-tts | Text-to-speech synthesis (Microsoft neural voices) | MIT License | Free, no API key needed. **Requires >= 7.2**: 7.0.x returns HTTP 403 after Microsoft changed the Sec-MS-GEC token scheme |
+| gTTS | Fallback text-to-speech | MIT License | Free, used only if edge-tts fails |
 
 ## Python Libraries
 
@@ -20,9 +21,12 @@ GuruFlow uses the following third-party components, libraries, and APIs.
 | httpx | HTTP client | BSD-3-Clause |
 | google-generativeai | Gemini API client | Apache 2.0 |
 | edge-tts | Microsoft Neural TTS | MIT License |
+| gTTS | Fallback TTS | MIT License |
+| Manim Community Edition | Programmatic teaching animation (video generation) | MIT License |
+| imageio-ffmpeg | Bundled static ffmpeg binary for muxing audio and video | BSD-2-Clause |
 | PyMuPDF | PDF document parsing | AGPL-3.0 |
-| sentence-transformers | Semantic text embeddings | Apache 2.0 |
-| ChromaDB | Vector database | Apache 2.0 |
+| sentence-transformers | Semantic text embeddings | Apache 2.0 | *(optional, see requirements-vector.txt)* |
+| ChromaDB | Vector database | Apache 2.0 | *(optional, see requirements-vector.txt)* |
 | python-multipart | File upload support | BSD License |
 
 ## Frontend Libraries

@@ -29,7 +29,7 @@ try:
 except Exception:
     pass
 
-from fastapi import FastAPI, HTTPException, UploadFile, File  # noqa: E402
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import FileResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
@@ -46,6 +46,9 @@ from apps.api.store import InMemoryLessonRepository, LessonSession  # noqa: E402
 from apps.api.student_memory import StudentMemoryStore  # noqa: E402
 from services.evaluation import (  # noqa: E402
     CHECKPOINT_CONCEPT_ID,
+    CONSTANT_CURRENT,
+    DIRECT_PROPORTIONALITY,
+    build_repair_scene,
     build_report,
     evaluate_answer,
 )
@@ -54,6 +57,8 @@ from services.planner import plan_lesson  # noqa: E402
 from services.planner.flashcards import generate_flashcards  # noqa: E402
 from services.planner.persona import persona_feedback  # noqa: E402
 from services.planner.study_plan import build_study_plan  # noqa: E402
+from services.qa import answer_question  # noqa: E402
+from services import video as video_service  # noqa: E402
 
 WEB_DIR = REPO_ROOT / "apps" / "web"
 
@@ -113,6 +118,7 @@ def health() -> dict[str, Any]:
         "mode": "deterministic" if not gemini_available() else "llm-enhanced",
         "gemini": gemini_available(),
         "rag": rag_status(),
+        "video": video_service.cache_stats(),
     }
 
 
@@ -214,7 +220,21 @@ def complete_scene(lesson_id: str, scene_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Lesson not found")
 
     scene = next((s for s in session.plan["scenes"] if s["id"] == scene_id), None)
+
     if scene is None:
+        # Repair scenes are generated during evaluation and never stored on the
+        # plan, but the learner did watch them, so count them as progress
+        # without crediting mastery for a concept they got wrong.
+        if scene_id.startswith("scene-repair-"):
+            session.scenes_completed.add(scene_id)
+            repository.save_session(session)
+            return {
+                "lessonId": lesson_id,
+                "sceneId": scene_id,
+                "scenesCompleted": len(session.scenes_completed),
+                "totalScenes": len(session.plan["scenes"]),
+                "repair": True,
+            }
         raise HTTPException(status_code=404, detail="Scene not found")
 
     session.scenes_completed.add(scene_id)
@@ -655,6 +675,168 @@ def _derive_upload_keywords(text: str) -> list[str]:
 
 # Serving the media/visuals sources lets the browser import the real contract
 # modules instead of a reimplementation of them.
+# ---------------------------------------------------------------------------
+# Follow-up questions
+# ---------------------------------------------------------------------------
+
+
+@app.post("/lessons/{lesson_id}/ask")
+def ask_followup(lesson_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Answer a learner's follow-up without losing the lesson's context.
+
+    Grounded in the same material the lesson was planned from, so the answer
+    carries page citations - or admits the material does not cover it.
+    """
+    session = repository.get_session(lesson_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+
+    question = str(body.get("question", "")).strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="A question is required")
+
+    material = repository.get_material(session.material_id)
+    if material is None:
+        raise HTTPException(status_code=404, detail="Material not found")
+
+    language = body.get("language") or session.plan["learner"]["language"]
+    result = answer_question(
+        question,
+        material.sections,
+        material.document_id,
+        language=language,
+        lesson_topic=session.plan.get("topic", "this lesson"),
+    )
+    result["question"] = question
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Teaching video
+# ---------------------------------------------------------------------------
+
+
+def _video_payload(video_id: str) -> dict[str, Any]:
+    status = video_service.get_status(video_id)
+    return {
+        "videoId": video_id,
+        "status": status,
+        "url": f"/video/{video_id}.mp4" if status == "ready" else None,
+    }
+
+
+@app.post("/video/render")
+def request_scene_video(body: dict[str, Any]) -> dict[str, Any]:
+    """Ask for a scene's teaching video, rendering in the background.
+
+    Takes the Scene itself rather than an id so repair scenes - which are
+    generated during evaluation and never belong to the stored plan - get
+    videos on exactly the same path as planned scenes.
+    """
+    scene = body.get("scene")
+    if not isinstance(scene, dict) or not scene.get("narration"):
+        raise HTTPException(status_code=400, detail="A scene object is required")
+
+    language = body.get("language") or "hinglish"
+    if not video_service.video_generation_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Video generation unavailable (manim or ffmpeg missing)",
+        )
+
+    return _video_payload(video_service.render_in_background(scene, language))
+
+
+@app.get("/video/{video_id}/status")
+def scene_video_status(video_id: str) -> dict[str, Any]:
+    return _video_payload(video_id)
+
+
+@app.get("/video/{video_id}.mp4")
+def serve_scene_video(video_id: str, request: Request) -> Response:
+    """Serve a rendered video, honouring Range so the player can seek."""
+    path = video_service.cached_path(video_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Video not ready")
+
+    size = path.stat().st_size
+    range_header = request.headers.get("range")
+    if not range_header:
+        return FileResponse(path, media_type="video/mp4")
+
+    # "bytes=START-END"; END is optional.
+    try:
+        units, _, span = range_header.partition("=")
+        if units.strip().lower() != "bytes":
+            raise ValueError(units)
+        start_text, _, end_text = span.partition("-")
+        start = int(start_text) if start_text else 0
+        end = int(end_text) if end_text else size - 1
+    except ValueError:
+        raise HTTPException(status_code=416, detail="Malformed Range header")
+
+    start = max(0, start)
+    end = min(end, size - 1)
+    if start > end:
+        raise HTTPException(status_code=416, detail="Range not satisfiable")
+
+    with path.open("rb") as handle:
+        handle.seek(start)
+        chunk = handle.read(end - start + 1)
+
+    return Response(
+        content=chunk,
+        status_code=206,
+        media_type="video/mp4",
+        headers={
+            "Content-Range": f"bytes {start}-{end}/{size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(len(chunk)),
+        },
+    )
+
+
+@app.post("/lessons/{lesson_id}/video/prerender")
+def prerender_lesson_videos(lesson_id: str) -> dict[str, Any]:
+    """Warm the whole lesson's video cache so the demo never waits."""
+    session = repository.get_session(lesson_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    if not video_service.video_generation_available():
+        raise HTTPException(status_code=503, detail="Video generation unavailable")
+
+    language = session.plan["learner"]["language"]
+    scenes = list(session.plan["scenes"])
+
+    # The repair scene is the flagship moment, so warm it too rather than
+    # making the learner wait for it at the worst possible time.
+    for misconception in (DIRECT_PROPORTIONALITY, CONSTANT_CURRENT):
+        scenes.append(build_repair_scene(misconception, language))
+
+    ids = video_service.prerender_lesson(scenes, language)
+    return {"lessonId": lesson_id, "videoIds": ids, "count": len(ids)}
+
+
+@app.get("/lessons/{lesson_id}/video/status")
+def lesson_video_status(lesson_id: str) -> dict[str, Any]:
+    session = repository.get_session(lesson_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    language = session.plan["learner"]["language"]
+    scenes = session.plan["scenes"]
+    statuses = [
+        {"sceneId": scene["id"], **_video_payload(video_service.video_id(scene, language))}
+        for scene in scenes
+    ]
+    ready = sum(1 for s in statuses if s["status"] == "ready")
+    return {
+        "lessonId": lesson_id,
+        "ready": ready,
+        "total": len(statuses),
+        "scenes": statuses,
+    }
+
+
 app.mount(
     "/vendor/visuals",
     StaticFiles(directory=REPO_ROOT / "services" / "visuals" / "src"),

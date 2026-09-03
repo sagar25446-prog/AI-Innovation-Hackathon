@@ -5,16 +5,23 @@ adaptive lessons, checks understanding, detects misconceptions, and re-teaches
 what it gets wrong. It runs fully offline from the built-in Electricity corpus,
 or from **any document you upload** (PDF/DOCX/PPTX/TXT/MD).
 
-## Honest scope: the avatar and "video" reality
+## AI teaching video
 
-A teacher read-along is your avatar. The product renders a **hand-drawn SVG
-teacher (blinking eyes, talking mouth) with karaoke captions and a live visual
-canvas** -- it does **not** produce a lip-synced D-ID video file out of the box.
-A real D-ID integration ships in `services/media/` and is wired for provider
-swapping, but the shipped browser uses the SVG teacher by default (a Jupyter/API
-key is required for D-ID, and the brief's "talking avatar video" would need that
-provisioned). See [the integrated product](docs/INTEGRATED_PRODUCT.md) for the
-candid SWOT on this exact trade-off.
+GuruFlow renders a **narrated teaching video for every scene**, locally and with
+no API key: a Manim animation of that scene's own visual, a Microsoft neural
+voice (edge-tts) reading the narration, and burned-in captions timed from the
+speech. Press **Watch video** in the classroom.
+
+The animation is drawn programmatically rather than sampled from a generative
+video model. A text-to-video model cannot be relied on to draw a correct circuit
+or a correct `I = V/R` curve, and a plausible-but-wrong diagram would undermine
+the source-grounding the whole product rests on. Generative video is therefore
+deliberately not used for explanatory content.
+
+The teacher shown in the video and in the interactive view is a drawn avatar,
+not a photoreal lip-synced human. A D-ID adapter ships in `services/media/` for
+teams that want a cloud talking head, but it is optional and not on the default
+path. See [the integrated product](docs/INTEGRATED_PRODUCT.md) for the full SWOT.
 
 ## Product loop
 

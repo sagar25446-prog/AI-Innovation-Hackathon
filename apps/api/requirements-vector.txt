@@ -1,0 +1,13 @@
+# OPTIONAL: semantic vector RAG.
+#
+# Kept out of the core requirements because chroma-hnswlib has no Windows
+# wheel and needs a C++ build toolchain; a failed build previously aborted the
+# whole install and left the test suite uncollectable.
+#
+#   pip install -r apps/api/requirements-vector.txt
+#   set GURUFLOW_VECTOR_RAG=1
+#
+# Without these the app uses keyword retrieval, which is the tested default.
+
+sentence-transformers==3.3.1
+chromadb==0.5.23
