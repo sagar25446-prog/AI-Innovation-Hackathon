@@ -16,6 +16,7 @@ import re
 from typing import Any
 
 from manim import (
+    BLACK,
     DOWN,
     LEFT,
     RIGHT,
@@ -459,6 +460,54 @@ def build_visual(spec: dict[str, Any]):
 # ---------------------------------------------------------------------------
 
 
+
+# ---------------------------------------------------------------------------
+# Teacher panel geometry
+#
+# Declared once so the Manim scene and the video compositor cannot disagree
+# about where the teacher lives.
+# ---------------------------------------------------------------------------
+
+TEACHER_PANEL_WIDTH = 3.0
+TEACHER_PANEL_HEIGHT = 3.5
+TEACHER_PANEL_X = -1.0   # multiplied by (frame_width/2 - 2.15) at layout time
+TEACHER_PANEL_Y = -0.15
+
+# Inset so the composited head sits inside the panel's rounded border.
+TEACHER_PANEL_INSET = 0.12
+
+
+def teacher_panel_rect(pixel_width: int, pixel_height: int,
+                       frame_width: float = 14.222222, frame_height: float = 8.0):
+    """Pixel rectangle of the teacher panel: (x, y, width, height).
+
+    Manim's origin is the frame centre with +y upward; video pixels start at
+    the top-left with +y downward, hence the flip.
+    """
+    per_unit = pixel_width / frame_width
+    centre_x_units = TEACHER_PANEL_X * (frame_width / 2 - 2.15)
+    centre_y_units = TEACHER_PANEL_Y
+
+    inner_w = TEACHER_PANEL_WIDTH - 2 * TEACHER_PANEL_INSET
+    inner_h = TEACHER_PANEL_HEIGHT - 2 * TEACHER_PANEL_INSET
+
+    width_px = int(round(inner_w * per_unit))
+    height_px = int(round(inner_h * per_unit))
+    centre_x_px = pixel_width / 2 + centre_x_units * per_unit
+    centre_y_px = pixel_height / 2 - centre_y_units * per_unit
+
+    # H.264 needs even dimensions.
+    width_px -= width_px % 2
+    height_px -= height_px % 2
+
+    return (
+        int(round(centre_x_px - width_px / 2)),
+        int(round(centre_y_px - height_px / 2)),
+        width_px,
+        height_px,
+    )
+
+
 def build_teacher() -> tuple[VGroup, VGroup]:
     """Simple, on-brand teacher. Returns (figure, mouth) so the mouth can move."""
     head = Circle(radius=0.62, stroke_width=0, fill_color=SKIN, fill_opacity=1)
@@ -496,6 +545,8 @@ class LessonVideoScene(Scene):
         grounded: bool = bool(data.get("grounded", False))
         is_repair: bool = bool(data.get("isRepair", False))
         citation: str = data.get("citation", "")
+        # True when a talking-head clip will be overlaid onto the teacher panel.
+        teacher_slot: bool = bool(data.get("teacherSlot", False))
 
         self.camera.background_color = BG
         half_w = config.frame_width / 2
@@ -537,14 +588,23 @@ class LessonVideoScene(Scene):
         # ---- Teacher panel ----------------------------------------------
         teacher, mouth = build_teacher()
         panel = RoundedRectangle(
-            corner_radius=0.2, width=3.0, height=3.5,
-            stroke_color=BORDER, stroke_width=2, fill_color=PANEL, fill_opacity=1,
+            corner_radius=0.2,
+            width=TEACHER_PANEL_WIDTH, height=TEACHER_PANEL_HEIGHT,
+            stroke_color=BORDER, stroke_width=2,
+            # Black behind a composited head so no panel colour bleeds through.
+            fill_color=BLACK if teacher_slot else PANEL, fill_opacity=1,
         )
         teacher.scale(0.95).move_to(panel.get_center() + UP * 0.1)
         name = label("GuruFlow Teacher", 16, DIM)
         name.next_to(panel.get_bottom(), UP, buff=0.22)
-        teacher_panel = VGroup(panel, teacher, name)
-        teacher_panel.move_to(LEFT * (half_w - 2.15) + DOWN * 0.15)
+
+        # When a talking head will be composited in, the panel is left empty and
+        # the drawn character is omitted rather than hidden behind the video.
+        parts = [panel] if teacher_slot else [panel, teacher, name]
+        teacher_panel = VGroup(*parts)
+        teacher_panel.move_to(
+            LEFT * (half_w - 2.15) + UP * TEACHER_PANEL_Y
+        )
         self.add(teacher_panel)
 
         # Mouth movement so the teacher reads as speaking rather than frozen.
@@ -557,7 +617,8 @@ class LessonVideoScene(Scene):
             scale = 1.0 + 0.85 * abs(math.sin(t * 6.5))
             mob.stretch_to_fit_height(base_height * scale)
 
-        mouth.add_updater(animate_mouth)
+        if not teacher_slot:
+            mouth.add_updater(animate_mouth)
 
         # ---- Caption band ------------------------------------------------
         caption_holder = VGroup()
@@ -617,5 +678,6 @@ class LessonVideoScene(Scene):
 
         remaining = max(0.3, duration - spent)
         self.wait(remaining)
-        mouth.clear_updaters()
+        if not teacher_slot:
+            mouth.clear_updaters()
         caption_holder.clear_updaters()

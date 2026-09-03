@@ -112,3 +112,77 @@ def mux_audio_video(
         )
         return False
     return True
+
+
+def to_wav_16k_mono(source: str | Path, output: str | Path) -> bool:
+    """Convert audio to 16 kHz mono WAV.
+
+    Whisper - which MuseTalk uses for audio feature extraction - expects this
+    format. edge-tts hands us a 24 kHz MP3, so the conversion is mandatory
+    rather than cosmetic.
+    """
+    binary = ffmpeg_path()
+    if binary is None:
+        return False
+    result = _run([
+        binary, "-y", "-hide_banner", "-loglevel", "error",
+        "-i", str(source),
+        "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
+        str(output),
+    ])
+    if result.returncode != 0:
+        logger.error(
+            "wav conversion failed: %s",
+            result.stderr.decode("utf-8", "replace")[:300],
+        )
+        return False
+    return True
+
+
+def overlay_video(
+    base_path: str | Path,
+    overlay_path: str | Path,
+    output_path: str | Path,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    timeout: int = 900,
+) -> bool:
+    """Composite one video over another at a pixel rectangle.
+
+    Used to drop a talking-head clip into the teacher panel of the rendered
+    lesson frame. The overlay is looped so a short idle clip still covers a
+    longer scene, and ``-shortest`` then takes the length from the base.
+    """
+    binary = ffmpeg_path()
+    if binary is None:
+        return False
+
+    # The head clip is looped so a short idle video covers a longer scene.
+    # `shortest=1` on the overlay filter - not the `-shortest` output flag - is
+    # what actually terminates the render: with `-stream_loop -1` the second
+    # input never ends, and `-shortest` does not reliably bound a
+    # filter_complex output, so the encode runs forever.
+    filter_graph = (
+        f"[1:v]scale={width}:{height},setsar=1[head];"
+        f"[0:v][head]overlay={x}:{y}:shortest=1[out]"
+    )
+    result = _run([
+        binary, "-y", "-hide_banner", "-loglevel", "error",
+        "-i", str(base_path),
+        "-stream_loop", "-1", "-i", str(overlay_path),
+        "-filter_complex", filter_graph,
+        "-map", "[out]",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        str(output_path),
+    ], timeout=timeout)
+
+    if result.returncode != 0:
+        logger.error(
+            "overlay failed: %s", result.stderr.decode("utf-8", "replace")[:400]
+        )
+        return False
+    return True

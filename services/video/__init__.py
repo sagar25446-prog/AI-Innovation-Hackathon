@@ -30,7 +30,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from services.ffmpeg_util import ffmpeg_available, mux_audio_video
+from services.ffmpeg_util import ffmpeg_available, mux_audio_video, overlay_video
+from services.video import talking_head
 from services.voice import caption_lines, synthesize
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,8 @@ def video_id(scene: dict[str, Any], language: str) -> str:
         "quality": QUALITY,
         # Bump when the renderer's look changes so stale videos are not served.
         "renderer": "v2",
+        # A composited photoreal head is a different video from a drawn one.
+        "talkingHead": talking_head.available(),
     }
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:20]
@@ -134,8 +137,12 @@ def _first_citation(scene: dict[str, Any]) -> str:
     return f"Source: {document}, {where}" + (f" - {heading}" if heading else "")
 
 
-def _render_manim(payload: dict[str, Any], out_path: Path) -> bool:
-    """Render the silent animation. Returns True on success."""
+def _render_manim(payload: dict[str, Any], out_path: Path) -> tuple[int, int] | None:
+    """Render the silent animation.
+
+    Returns the (width, height) actually rendered, or None on failure, because
+    the talking-head compositor needs the real pixel size to place the overlay.
+    """
     import imageio_ffmpeg
     from manim import config, tempconfig
 
@@ -160,18 +167,19 @@ def _render_manim(payload: dict[str, Any], out_path: Path) -> bool:
                 scene = LessonVideoScene()
                 scene.render()
                 produced = Path(scene.renderer.file_writer.movie_file_path)
+                pixel_size = (config.pixel_width, config.pixel_height)
             if not produced.exists():
                 logger.error("Manim reported success but produced no file.")
-                return False
+                return None
             out_path.parent.mkdir(parents=True, exist_ok=True)
             # Copy then rename so a partially copied file is never observable.
             staging = out_path.with_suffix(".copying")
             shutil.copy2(produced, staging)
             staging.replace(out_path)
-            return True
+            return pixel_size
         except Exception as exc:
             logger.exception("Manim render failed: %s", exc)
-            return False
+            return None
 
 
 def render_scene_video(
@@ -221,7 +229,10 @@ def render_scene_video(
             caption_lines(speech, narration) if speech is not None else []
         )
 
+        use_talking_head = talking_head.available()
+
         payload = {
+            "teacherSlot": use_talking_head,
             "objective": scene.get("objective", ""),
             "visual": scene.get("visual", {}),
             "captions": captions,
@@ -235,7 +246,8 @@ def render_scene_video(
         silent = CACHE_DIR / f"{vid}.silent.mp4"
         final = CACHE_DIR / f"{vid}.mp4"
 
-        if not _render_manim(payload, silent):
+        pixel_size = _render_manim(payload, silent)
+        if pixel_size is None:
             _set_status(vid, "failed:render")
             return VideoResult(vid, None, "failed", "animation render failed")
 
@@ -247,6 +259,21 @@ def render_scene_video(
 
         audio_path = CACHE_DIR / f"{vid}.mp3"
         audio_path.write_bytes(speech.audio)
+
+        if use_talking_head:
+            head = talking_head.generate(audio_path, CACHE_DIR)
+            if head is not None:
+                from services.video.scenes import teacher_panel_rect
+
+                x, y, width, height = teacher_panel_rect(*pixel_size)
+                composited = CACHE_DIR / f"{vid}.composited.mp4"
+                if overlay_video(silent, head, composited, x, y, width, height):
+                    silent.unlink(missing_ok=True)
+                    silent = composited
+                else:
+                    # Compositing failed; the drawn panel is still a valid frame.
+                    composited.unlink(missing_ok=True)
+                    logger.warning("Talking-head overlay failed; using the plain panel.")
 
         # Mux to a scratch name and rename only once ffmpeg has finished.
         # Writing straight to the final path makes the file visible - and so
@@ -318,4 +345,5 @@ def cache_stats() -> dict[str, Any]:
         "bytes": sum(f.stat().st_size for f in files),
         "quality": QUALITY,
         "available": video_generation_available(),
+        "talkingHead": talking_head.status(),
     }
