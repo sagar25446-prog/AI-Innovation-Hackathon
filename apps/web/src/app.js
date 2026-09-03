@@ -406,6 +406,7 @@ function ensureSceneVideo(scene) {
 function applySceneVideo(scene, info) {
   if (currentScene().id !== scene.id) return;
   setVideoButton('ready');
+  updateMediaBadge(scene, state.lastMedia);
   const player = $('lesson-video');
   if (!player) return;
   if (player.dataset.videoId !== info.videoId) {
@@ -446,17 +447,8 @@ function startScene() {
   // Render the scene through services/media, then drive captions from it.
   state.media.render(scene, state.plan.learner.language).then((mediaResult) => {
     state.lastMediaResult = mediaResult;
-    const status = $('media-status');
-    if (mediaResult.status === 'degraded') {
-      status.textContent = 'degraded - captions only';
-      status.className = 'badge badge-warn';
-    } else if (mediaResult.teacherPanel?.type === 'video') {
-      status.textContent = 'avatar video';
-      status.className = 'badge badge-good';
-    } else {
-      status.textContent = state.voiceOn ? 'voice + fallback panel' : 'fallback panel';
-      status.className = 'badge badge-muted';
-    }
+    state.lastMedia = mediaResult;
+    updateMediaBadge(scene, mediaResult);
     runCaptions(scene, mediaResult.captions || []);
   });
 
@@ -589,6 +581,43 @@ function renderKaraoke(box, text, spokenUpTo, tokens) {
     box.appendChild(node);
   } else {
     box.textContent = text;
+  }
+}
+
+
+/**
+ * Describe the media state honestly.
+ *
+ * services/media reports `degraded` whenever a provider "fails", and the
+ * fallback avatar provider throws by design when no cloud avatar is
+ * configured. Reporting that as degraded labels the product's normal,
+ * intended state as broken, so the two signals are read separately:
+ * a missing cloud avatar is expected, a missing voice is not.
+ */
+function updateMediaBadge(scene, mediaResult) {
+  const status = $('media-status');
+  if (!status) return;
+
+  const meta = (mediaResult && mediaResult.metadata) || {};
+  const sceneVideo = video.byScene.get(scene.id);
+  const videoReady = sceneVideo && sceneVideo.status === 'ready';
+
+  if (videoReady) {
+    status.textContent = 'teaching video ready';
+    status.className = 'badge badge-good';
+  } else if (mediaResult && mediaResult.teacherPanel?.type === 'video') {
+    status.textContent = 'avatar video';
+    status.className = 'badge badge-good';
+  } else if (state.voiceOn && meta.ttsFallback) {
+    // Voice was asked for and could not be produced: genuinely degraded.
+    status.textContent = 'voice unavailable - captions';
+    status.className = 'badge badge-warn';
+  } else if (state.voiceOn) {
+    status.textContent = 'voice + drawn teacher';
+    status.className = 'badge badge-good';
+  } else {
+    status.textContent = 'drawn teacher + captions';
+    status.className = 'badge badge-muted';
   }
 }
 
@@ -1424,6 +1453,7 @@ function init() {
     const button = $('voice-btn');
     button.textContent = state.voiceOn ? 'Voice on' : 'Voice off';
     button.setAttribute('aria-pressed', String(state.voiceOn));
+    updateMediaBadge(currentScene(), state.lastMedia);
     if (!state.media.voiceAvailable) {
       button.textContent = 'Voice unavailable';
       button.disabled = true;
