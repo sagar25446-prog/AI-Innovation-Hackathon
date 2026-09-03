@@ -124,20 +124,53 @@ export class GuruFlowClient {
     };
   }
 
-  async createPlan({ learner, materialId, topic }) {
+  async createPlan({ learner, materialId, topic, studyMode = 'lesson' }) {
     if (this.isLive) {
       return request('/lessons/plan', {
         method: 'POST',
-        body: JSON.stringify({ learner, materialId, topic, studentId: 'student-demo' }),
+        body: JSON.stringify({ learner, materialId, topic, studentId: 'student-demo', studyMode }),
       });
     }
     const plan = await loadFixture('ohms-law-beginner-hinglish.json');
     plan.topic = topic;
-    plan.tier = 'fixture';
+    plan.studyMode = studyMode;
+    plan.tier = studyMode === 'exam' ? 'exam-drill' : 'fixture';
     plan.estimatedSeconds = plan.scenes.reduce((sum, s) => sum + s.durationSeconds, 0);
     plan.documentTitle = 'NCERT Class 9 Science - Chapter 12 (fixture)';
     this.fixturePlan = plan;
     return plan;
+  }
+
+  async getStudyPlan(studentId) {
+    if (this.isLive) {
+      try {
+        return await request(`/students/${studentId}/study-plan`);
+      } catch (err) {
+        if (String(err.message).startsWith('404')) return null;
+        throw err;
+      }
+    }
+    // Fixture mode: a plausible 7-day spaced-revision schedule.
+    const today = new Date().toISOString().slice(0, 10);
+    const plus = (d) => {
+      const t = new Date();
+      t.setDate(t.getDate() + d);
+      return t.toISOString().slice(0, 10);
+    };
+    return {
+      studentId,
+      strategy: 'spaced-repetition',
+      horizonDays: 7,
+      weakConcepts: this.progress.misconception ? ['ohms-law-application'] : [],
+      strongConcepts: ['current', 'voltage', 'resistance', 'ohms-law'],
+      sessions: [
+        { day: 1, date: today, title: 'Relearn what you missed', conceptIds: ['ohms-law-application'], sessionMinutes: 5, mode: 'revision' },
+        { day: 2, date: plus(1), title: 'Reinforce today', conceptIds: ['ohms-law', 'ohms-law-application'], sessionMinutes: 10, mode: 'revision' },
+        { day: 4, date: plus(3), title: 'Bring back borderline ideas', conceptIds: ['resistance', 'ohms-law', 'ohms-law-application'], sessionMinutes: 15, mode: 'revision' },
+        { day: 7, date: plus(6), title: 'Full mixed review', conceptIds: ['current', 'voltage', 'resistance', 'ohms-law', 'ohms-law-application', 'lesson-summary'], sessionMinutes: 30, mode: 'revision' },
+      ],
+      totalReviewMinutes: 60,
+    };
   }
 
   async switchLanguage(lessonId, language) {

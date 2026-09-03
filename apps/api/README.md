@@ -23,10 +23,11 @@ Run from the repository root so `services/` resolves.
 python -m pytest apps/api/tests -q
 ```
 
-87 tests cover the planner, the evaluation branches, multi-format upload (PDF /
-DOCX / PPTX), real diagram rendering, long-term student memory, flashcards and
-the judge-critical API path, including a guard against "fake adaptation" (a
-test that fails if the learner's answer does not change what is taught next).
+95 tests cover the planner, the evaluation branches, multi-format upload (PDF /
+DOCX / PPTX), real diagram rendering, long-term student memory, flashcards,
+gamified study modes, spaced multi-day revision planning and the judge-critical
+API path, including a guard against "fake adaptation" (a test that fails if the
+learner's answer does not change what is taught next).
 
 ## Endpoints
 
@@ -36,7 +37,7 @@ test that fails if the learner's answer does not change what is taught next).
 | POST | `/materials` | Ingest a topic or pasted text into cited sections |
 | GET | `/materials/{materialId}` | Extraction status |
 | POST | `/upload` | Upload a PDF / DOCX / PPTX / TXT and index it |
-| POST | `/lessons/plan` | Plan a lesson for a learner profile |
+| POST | `/lessons/plan` | Plan a lesson for a learner profile (`studyMode`: lesson/exam/revision) |
 | GET | `/lessons/{lessonId}` | Re-fetch a plan |
 | POST | `/lessons/{lessonId}/language` | Re-render in another language, keeping progress |
 | POST | `/lessons/{lessonId}/scenes/{sceneId}/complete` | Mark a scene watched |
@@ -45,6 +46,7 @@ test that fails if the learner's answer does not change what is taught next).
 | GET | `/students/{studentId}/report` | Learning report for a student |
 | GET | `/students/{studentId}/profile` | **Long-term learning profile (persistent)** |
 | GET | `/students/{studentId}/history` | Chronological lesson history |
+| GET | `/students/{studentId}/study-plan` | **Spaced 7-day revision schedule from memory** |
 | POST | `/lessons/{lessonId}/flashcards` | Generate review flashcards (optionally for weak concepts) |
 | GET | `/diagram` | Render a circuit/equation/graph PNG |
 
@@ -57,6 +59,7 @@ test that fails if the learner's answer does not change what is taught next).
 | `services/planner` | Concept catalogue -> `Scene` objects adapted to level/language/time/personality |
 | `services/planner/flashcards` | Deterministic review-card generation from scenes |
 | `services/planner/persona` | Multiple teacher personalities (patient / socratic / coach) |
+| `services/planner/study_plan` | Spaced multi-day revision scheduling ("the 7-day rhythm") |
 | `services/evaluation` | Answer classification, misconception diagnosis, repair scene, report |
 | `apps/api/store.py` | `LessonRepository` seam + in-memory implementation |
 | `apps/api/student_memory.py` | File-backed long-term student memory |

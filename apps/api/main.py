@@ -53,6 +53,7 @@ from services.ingestion import ingest_text, ingest_topic  # noqa: E402
 from services.planner import plan_lesson  # noqa: E402
 from services.planner.flashcards import generate_flashcards  # noqa: E402
 from services.planner.persona import persona_feedback  # noqa: E402
+from services.planner.study_plan import build_study_plan  # noqa: E402
 
 WEB_DIR = REPO_ROOT / "apps" / "web"
 
@@ -152,7 +153,9 @@ def create_plan(request: PlanRequest) -> dict[str, Any]:
         repository.save_material(material)
 
     learner = request.learner.model_dump(exclude_none=True)
-    plan = plan_lesson(learner, material, topic=request.topic)
+    plan = plan_lesson(
+        learner, material, topic=request.topic, study_mode=request.studyMode
+    )
 
     session = LessonSession(
         lesson_id=plan["id"],
@@ -377,6 +380,25 @@ def lesson_flashcards(lesson_id: str, body: dict[str, Any] | None = None) -> dic
         "count": len(cards),
         "cards": cards,
     }
+
+
+@app.get("/students/{student_id}/study-plan")
+def student_study_plan(student_id: str) -> dict[str, Any]:
+    """Return a spaced, multi-day revision plan built from long-term memory.
+
+    Uses the student's accumulated concept mastery and recurring weak concepts
+    to schedule review sessions across one week (days 1, 2, 4, 7), revising
+    weak concepts earliest and most often. 404 if the student has no memory
+    yet (i.e. they need to finish at least one lesson first).
+    """
+    profile = student_memory.get_profile(student_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="No learning profile yet")
+    return build_study_plan(
+        student_id,
+        concept_mastery=profile.get("conceptMastery", {}),
+        weak_concepts=profile.get("weakConcepts", []),
+    )
 
 
 # ---------------------------------------------------------------------------

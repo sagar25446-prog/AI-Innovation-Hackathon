@@ -95,6 +95,45 @@ def select_tier(available_minutes: int) -> tuple[str, list[str]]:
     return name, list(concept_ids)
 
 
+_STUDY_MODE_SETS: dict[str, list[str]] = {
+    # Assessment-heavy drill: core + extra practice + the real checkpoint + review.
+    "exam": [
+        "electric-current",
+        "ohms-law",
+        "ohms-law-practice",
+        "ohms-law-application",
+        "lesson-summary",
+    ],
+    # Quick spaced recap: the key law, the checkpoint and the takeaway.
+    "revision": [
+        "ohms-law",
+        "ohms-law-application",
+        "lesson-summary",
+    ],
+}
+
+
+def _apply_study_mode(concept_ids: list[str], study_mode: str) -> list[str]:
+    """Return the concept order to teach for the requested study mode.
+
+    ``lesson`` (default) keeps the time-based tier order untouched so existing
+    behaviour and tests are stable. ``exam`` and ``revision`` pick a curated,
+    assessment-focused set regardless of the full tier.
+    """
+    if study_mode not in _STUDY_MODE_SETS:
+        return list(concept_ids)
+    return list(_STUDY_MODE_SETS[study_mode])
+
+
+def _tier_name_for(concept_ids: list[str]) -> str:
+    """Rename the tier sensibly when a study mode rewrites the concept set."""
+    if "ohms-law-practice" in concept_ids:
+        return "exam-drill"
+    if len(concept_ids) <= 4:
+        return "revision"
+    return "lesson"
+
+
 def build_narration(concept: dict[str, Any], language: str, level: str) -> str:
     """Base narration in the learner's language, deepened for higher levels."""
     narration = concept["narration"][language]
@@ -122,13 +161,16 @@ def _plan_lesson_deterministic(
     material: Material,
     topic: str,
     lesson_id: str | None,
+    study_mode: str = "lesson",
 ) -> dict[str, Any]:
     """Build a contract-shaped LessonPlan using the deterministic path."""
     level = learner["level"]
     language = learner["language"]
     available_minutes = int(learner["availableMinutes"])
 
-    tier_name, concept_ids = select_tier(available_minutes)
+    _, concept_ids = select_tier(available_minutes)
+    concept_ids = _apply_study_mode(concept_ids, study_mode)
+    tier_name = study_mode if study_mode != "lesson" else _tier_name_for(concept_ids)
     multiplier = LEVEL_DURATION_MULTIPLIER[level]
 
     raw_durations = [
@@ -302,11 +344,17 @@ def plan_lesson(
     material: Material,
     topic: str = "Ohm's Law",
     lesson_id: str | None = None,
+    study_mode: str = "lesson",
 ) -> dict[str, Any]:
     """Build a contract-shaped ``LessonPlan`` for this learner and material.
 
     Tries Gemini Flash first (for richer, topic-agnostic content), falls back
     to the deterministic path if the LLM is unavailable or fails.
+
+    ``study_mode`` changes which study style is served:
+      * ``lesson``   - a normal teaching lesson (default)
+      * ``exam``     - assessment-heavy drill, centred on the checkpoint/practice
+      * ``revision`` - a quick spaced recap, centred on core + summary
     """
     # Vector-index the material so retrieval can use the persistent ChromaDB
     # store (falls back silently to in-memory/keyword search if unavailable).
@@ -317,6 +365,9 @@ def plan_lesson(
 
     llm_plan = _plan_lesson_llm(learner, material, topic, lesson_id)
     if llm_plan is not None:
+        llm_plan["studyMode"] = study_mode
         return llm_plan
 
-    return _plan_lesson_deterministic(learner, material, topic, lesson_id)
+    plan = _plan_lesson_deterministic(learner, material, topic, lesson_id, study_mode)
+    plan["studyMode"] = study_mode
+    return plan

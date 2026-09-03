@@ -20,10 +20,20 @@ from apps.api.main import app, repository  # noqa: E402
 
 
 @pytest.fixture
-def client():
+def client(tmp_path):
+    from apps.api import main as m
+    from apps.api.student_memory import StudentMemoryStore
+
     repository.reset()
-    with TestClient(app) as test_client:
-        yield test_client
+    # Isolate long-term memory from the shared on-disk store so endpoint tests
+    # are hermetic (the real store is file-backed and persists across runs).
+    saved_store = m.student_memory
+    m.student_memory = StudentMemoryStore(directory=str(tmp_path / "memory"))
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        m.student_memory = saved_store
 
 
 @pytest.fixture(autouse=True)
@@ -103,6 +113,67 @@ def test_lesson_can_be_fetched_again(client):
     fetched = client.get(f"/lessons/{plan['id']}")
     assert fetched.status_code == 200
     assert fetched.json()["id"] == plan["id"]
+
+
+def _study_mode_plan(client, mode):
+    learner = {
+        "level": "beginner",
+        "language": "hinglish",
+        "availableMinutes": 20,
+        "goal": "Understand Ohm's Law",
+    }
+    response = client.post(
+        "/lessons/plan",
+        json={"learner": learner, "topic": "Ohm's Law", "studyMode": mode},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_exam_study_mode_produces_drilled_assessment_plan(client):
+    plan = _study_mode_plan(client, "exam")
+    assert plan["studyMode"] == "exam"
+    ids = [s["conceptId"] for s in plan["scenes"]]
+    # Assessment-heavy: extra practice drill, the real checkpoint and review.
+    assert "ohms-law-practice" in ids
+    assert "ohms-law-application" in ids
+    assert "lesson-summary" in ids
+    assert any(s.get("checkpointId") for s in plan["scenes"])
+
+
+def test_revision_study_mode_produces_quick_recap(client):
+    plan = _study_mode_plan(client, "revision")
+    assert plan["studyMode"] == "revision"
+    ids = [s["conceptId"] for s in plan["scenes"]]
+    assert "ohms-law" in ids
+    assert "ohms-law-application" in ids
+    # Revision skips the deep lecture-only scenes.
+    assert "intro-electricity" not in ids
+
+
+def test_default_lesson_mode_still_returns_time_tier(client):
+    plan = _study_mode_plan(client, "lesson")
+    assert plan["studyMode"] == "lesson"
+    assert len(plan["scenes"]) == 7  # full tier at 20 minutes
+
+
+def test_study_plan_endpoint_requires_profile_then_builds_schedule(client):
+    # No memory yet -> 404 with a helpful message.
+    assert client.get("/students/student-demo/study-plan").status_code == 404
+    # Finish a lesson to seed long-term memory.
+    plan = make_plan(client)
+    lesson_id = plan["id"]
+    for scene in plan["scenes"]:
+        client.post(f"/lessons/{lesson_id}/scenes/{scene['id']}/complete")
+    client.get(f"/lessons/{lesson_id}/report")
+    # Now a spaced revision plan is available.
+    res = client.get("/students/student-demo/study-plan")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["strategy"] == "spaced-repetition"
+    assert body["horizonDays"] == 7
+    assert len(body["sessions"]) == 4
+    assert all(s["mode"] == "revision" for s in body["sessions"])
 
 
 def test_judge_critical_path_wrong_then_repair_then_retry(client):

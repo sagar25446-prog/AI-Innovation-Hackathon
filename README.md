@@ -99,13 +99,26 @@ offers review and teaching-style options:
   (`patient`, `socratic` or `coach`) in their profile. It reframes narration
   tone and checkpoint feedback without changing what is taught, so the default
   stays the deterministic hero path.
+- **Gamified study modes** — a learner can pick `studyMode: lesson`,
+  `exam` (assessment-heavy drill centred on the checkpoint + practice) or
+  `revision` (a quick spaced recap) when planning.
+- **Spaced multi-day revision ("the 7-day rhythm")** —
+  `GET /students/{studentId}/study-plan` turns accumulated memory into a
+  spaced-repetition calendar across one week (days 1, 2, 4, 7), revising weak
+  concepts earliest and most often (`services/planner/study_plan.py`).
 - **Learning profile dashboard** — the web app's report screen now links to a
   persistent dashboard (`screen-profile`) that visualizes concept mastery,
-  recurring patterns, weak/strong concepts, review flashcards and lesson
-  history, pulled from the profile endpoints.
+  recurring patterns, weak/strong concepts, review flashcards, a 7-day revision
+  plan and lesson history, pulled from the profile endpoints.
+
+The web client was also polished for the UI/UX rubric: a hand-drawn SVG teacher
+avatar with blinking eyes and a talking mouth, karaoke-style caption
+word-highlighting, scene-transition animations, confetti on a correct answer,
+proper stacked-fraction equation rendering, and loading spinners.
 
 ```bash
 curl http://127.0.0.1:8077/students/student-demo/profile
+curl http://127.0.0.1:8077/students/student-demo/study-plan
 curl -X POST http://127.0.0.1:8077/lessons/LESSON_ID/flashcards \
   -H "Content-Type: application/json" -d '{"conceptIds":["ohms-law"]}'
 ```

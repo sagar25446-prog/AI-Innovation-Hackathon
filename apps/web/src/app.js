@@ -128,6 +128,7 @@ async function handleOnboarding(event) {
       learner: state.learner,
       materialId: state.material.materialId,
       topic,
+      studyMode: $('study-mode').value,
     });
     state.scenes = state.plan.scenes.map((scene) => ({ ...scene }));
     state.sceneIndex = 0;
@@ -199,6 +200,14 @@ function formatDuration(seconds) {
   return mins ? `${mins}m ${secs.toString().padStart(2, '0')}s` : `${secs}s`;
 }
 
+function modeLabel(mode) {
+  return {
+    lesson: 'Lesson mode',
+    exam: 'Exam prep',
+    revision: 'Quick revision',
+  }[mode] || 'Lesson mode';
+}
+
 function renderPlan() {
   const plan = state.plan;
   const meta = $('plan-meta');
@@ -207,6 +216,10 @@ function renderPlan() {
   const chips = [
     { text: plan.learner.level, cls: 'badge-accent' },
     { text: plan.learner.language, cls: 'badge-accent' },
+    {
+      text: modeLabel(plan.studyMode),
+      cls: plan.studyMode === 'lesson' ? 'badge-accent' : 'badge-good',
+    },
     { text: `${plan.scenes.length} scenes`, cls: 'badge-muted' },
     {
       text: `${formatDuration(plan.estimatedSeconds || 0)} of ${plan.learner.availableMinutes}m budget`,
@@ -321,6 +334,15 @@ function startScene() {
     $('next-scene').textContent = 'Try the question again';
   }
 
+  // Play the scene-transition entrance animation (re-trigger by swap).
+  const stage = $('classroom-stage');
+  if (stage) {
+    stage.classList.remove('scene-enter');
+    // Force reflow so the animation reliably restarts between scenes.
+    void stage.offsetWidth;
+    stage.classList.add('scene-enter');
+  }
+
   state.client.completeScene(state.plan.id, scene.id).catch(() => {});
 }
 
@@ -359,6 +381,8 @@ function runCaptions(scene, captions) {
 
   const duration = scene.durationSeconds || 20;
 
+  // Karaoke mode: for the active caption, highlight words as they are spoken.
+  let karaokeWords = null;
   state.timer = setInterval(() => {
     state.elapsed += 0.25;
     $('scene-clock').textContent = `${Math.min(Math.ceil(state.elapsed), duration)}s / ${duration}s`;
@@ -367,7 +391,19 @@ function runCaptions(scene, captions) {
       const active = captions.find(
         (caption) => state.elapsed >= caption.startTime && state.elapsed < caption.endTime
       );
-      if (active) box.textContent = active.text;
+      if (active) {
+        const token = captionToWords(active.text);
+        if (token !== karaokeWords) {
+          karaokeWords = token;
+          renderKaraoke(box, active.text, 0, token);
+        }
+        if (token) {
+          const wordCount = token.length;
+          const wordDur = (active.endTime - active.startTime) / wordCount || 0.15;
+          const wordIndex = Math.floor((state.elapsed - active.startTime) / wordDur);
+          renderKaraoke(box, active.text, wordIndex, token);
+        }
+      }
     }
 
     if (state.elapsed >= duration) {
@@ -376,6 +412,34 @@ function runCaptions(scene, captions) {
       box.textContent = scene.narration;
     }
   }, 250);
+}
+
+/** Split narration into word tokens, treating maths like "V = I x R" as one unit. */
+function captionToWords(text) {
+  const match = text.match(/\b[\w’\']+|\b[VvIRr]\s*[=×÷·]\s*[VvIRr]\b|[=×÷·]+|\bΩ\b/gi);
+  return match || [];
+}
+
+/** Render a caption with an index of "spoken so far" words highlighted. */
+function renderKaraoke(box, text, spokenUpTo, tokens) {
+  if (tokens && tokens.length && tokens.length < 120) {
+    let seen = 0;
+    const node = document.createElement('div');
+    node.className = 'caption-karaoke';
+    text.replace(/\b[\w’\']+|\b[VvIRr]\s*[=×÷·]\s*[VvIRr]\b|[=×÷·]+|\bΩ\b/gi, (tok) => {
+      const span = document.createElement('span');
+      span.className = seen < spokenUpTo ? 'is-spoken' : '';
+      span.textContent = tok;
+      seen += 1;
+      node.appendChild(span);
+      node.appendChild(document.createTextNode(' '));
+      return tok;
+    });
+    box.textContent = '';
+    box.appendChild(node);
+  } else {
+    box.textContent = text;
+  }
 }
 
 function updateProgress() {
@@ -452,6 +516,7 @@ function showEvaluation(result) {
     icon.className = 'feedback-icon is-good';
     title.textContent = 'Correct';
     action.textContent = 'Continue the lesson';
+    celebrate();
     // Step over any repair scene spliced in earlier, otherwise "continue"
     // would drop the learner back into the re-teach they have just passed.
     action.onclick = () => goToScene(firstTeachingSceneAfter(state.sceneIndex));
@@ -482,6 +547,34 @@ function showEvaluation(result) {
 
   action.textContent = 'Show me the correct idea';
   action.onclick = () => insertRepairScene(result.repairScene);
+}
+
+/** Fire a lightweight DOM confetti celebration (no dependencies). */
+function celebrate() {
+  const panel = $('feedback-panel');
+  if (!panel || document.getElementById('confetti-layer')) return;
+  const layer = document.createElement('div');
+  layer.id = 'confetti-layer';
+  layer.className = 'confetti-layer';
+  panel.style.position = 'relative';
+  panel.appendChild(layer);
+  const colors = ['#3ecf8e', '#6c8cff', '#f5a524', '#ff6b9d', '#f8e16c'];
+  for (let i = 0; i < 40; i += 1) {
+    const piece = document.createElement('span');
+    piece.className = 'confetti-piece';
+    const size = 6 + Math.random() * 8;
+    piece.style.width = `${size}px`;
+    piece.style.height = `${size * (Math.random() > 0.5 ? 0.6 : 1.4)}px`;
+    piece.style.left = `${Math.random() * 100}%`;
+    piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+    piece.style.setProperty('--drift', `${(Math.random() * 260 - 130).toFixed(0)}px`);
+    piece.style.setProperty('--fall-duration', `${(1.4 + Math.random() * 1.4).toFixed(2)}s`);
+    layer.appendChild(piece);
+  }
+  setTimeout(() => {
+    const existing = document.getElementById('confetti-layer');
+    if (existing) existing.remove();
+  }, 3600);
 }
 
 /**
@@ -604,11 +697,24 @@ function openEvidence() {
  * Report
  * ------------------------------------------------------------------ */
 
+/** Put a visible spinner into a container in place of plain loading text. */
+function showLoading(container, message) {
+  container.textContent = '';
+  const shim = document.createElement('div');
+  shim.className = 'loading-shim';
+  const spinner = document.createElement('div');
+  spinner.className = 'spinner';
+  const label = document.createElement('span');
+  label.textContent = message || 'Loading...';
+  shim.append(spinner, label);
+  container.appendChild(shim);
+}
+
 async function showReport() {
   stopTimer();
   showScreen('report');
   const body = $('report-body');
-  body.textContent = 'Building your report...';
+  showLoading(body, 'Building your report...');
 
   try {
     const report = await state.client.getReport(state.plan.id);
@@ -774,7 +880,7 @@ async function showProfile() {
   stopTimer();
   showScreen('profile');
   const body = $('profile-body');
-  body.textContent = 'Loading your learning profile...';
+  showLoading(body, 'Loading your learning profile...');
 
   const studentId = (state.plan && state.plan.learner && state.plan.learner.studentId) || 'student-demo';
 
@@ -822,6 +928,30 @@ async function showProfile() {
     const flashTargets = weak.length ? weak : (profile.weakConcepts || []);
     const flash = await state.client.getFlashcards(state.plan ? state.plan.id : profile.lessonId, flashTargets);
     body.appendChild(profileSection('Review flashcards', profileFlashcards(flash.cards)));
+
+    // Spaced, multi-day revision plan built from long-term memory.
+    const study = await state.client.getStudyPlan(studentId);
+    if (study) {
+      const wrap = document.createElement('div');
+      wrap.className = 'study-timeline';
+      const total = elem('p', `Spaced revision: ${study.totalReviewMinutes} min across ${study.horizonDays} days`, 'hint');
+      wrap.appendChild(total);
+      (study.sessions || []).forEach((s) => {
+        const day = document.createElement('div');
+        day.className = 'study-day';
+        const head = document.createElement('div');
+        head.className = 'study-day-head';
+        head.appendChild(elem('strong', `Day ${s.day}`));
+        head.appendChild(elem('span', s.date, 'study-day-date'));
+        const para = document.createElement('div');
+        para.className = 'study-day-body';
+        para.appendChild(elem('div', s.title));
+        para.appendChild(elem('span', `${s.conceptIds.length} topics - ${s.sessionMinutes} min`, 'hint'));
+        day.append(head, para);
+        wrap.appendChild(day);
+      });
+      body.appendChild(profileSection('7-day revision plan', wrap));
+    }
 
     // Lesson history
     if ((profile.lessons || []).length) {
