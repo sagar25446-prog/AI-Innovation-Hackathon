@@ -203,3 +203,29 @@ describe('PrerenderedAvatarProvider', () => {
     });
   });
 });
+
+describe('interface conformance', () => {
+  test('matches the real AvatarProvider contract', async () => {
+    // Imported by relative path (Node-resolvable). The provider itself cannot
+    // import this, because media-adapter.js reaches it through the browser-only
+    // /vendor mount - hence structural implementation plus this check.
+    const { AvatarProvider } = await import(
+      '../../../services/media/src/interfaces.js'
+    );
+
+    const base = new AvatarProvider();
+    const ours = new PrerenderedAvatarProvider();
+
+    assert.equal(typeof base.generateAvatar, 'function');
+    assert.equal(typeof ours.generateAvatar, 'function');
+    // Same arity, so the renderer can call either interchangeably.
+    assert.equal(ours.generateAvatar.length, base.generateAvatar.length);
+  });
+
+  test('the abstract base still refuses to be used directly', async () => {
+    const { AvatarProvider } = await import(
+      '../../../services/media/src/interfaces.js'
+    );
+    await assert.rejects(() => new AvatarProvider().generateAvatar('n', null, {}));
+  });
+});

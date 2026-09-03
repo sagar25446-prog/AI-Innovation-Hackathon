@@ -450,7 +450,13 @@ function startScene() {
     .render(scene, state.plan.learner.language, {
       sceneIndex: state.sceneIndex,
       isRepair: Boolean(scene.isRepair),
-      answeredCorrectly: Boolean(state.lastEvaluation && state.lastEvaluation.correct),
+      // Only the scene immediately after the checkpoint reflects the answer;
+      // otherwise `correct` would leak into every later scene.
+      answeredCorrectly: Boolean(
+        state.lastEvaluation &&
+          state.lastEvaluation.correct &&
+          state.lastEvaluation.sceneIndex === state.sceneIndex - 1
+      ),
       isReport: false,
     })
     .then((mediaResult) => {
@@ -707,7 +713,9 @@ async function submitAnswer() {
       optionId: state.selectedOption,
       language: state.plan.learner.language,
     });
-    state.lastEvaluation = result;
+    // Stamp which scene this verdict came from, so the avatar clip role can
+    // apply to the next scene only.
+    state.lastEvaluation = { ...result, sceneIndex: state.sceneIndex };
     showEvaluation(result);
   } catch (err) {
     $('captions').textContent = `Could not evaluate that answer: ${err.message}`;
@@ -931,11 +939,40 @@ function showLoading(container, message) {
   container.appendChild(shim);
 }
 
+
+/**
+ * Play the completion avatar clip on the report, if one exists.
+ *
+ * The report has no scene lifecycle, so the clip is requested straight from
+ * the provider rather than through a scene render. Absent clips throw, which
+ * is the documented contract - the slot simply stays hidden.
+ */
+async function showCompletionAvatar() {
+  const slot = $('report-avatar');
+  const player = $('report-avatar-video');
+  if (!slot || !player) return;
+
+  slot.hidden = true;
+  try {
+    const clip = await state.media.avatar.generateAvatar('', null, {
+      clipRole: 'complete',
+      language: state.plan?.learner?.language,
+    });
+    if (!clip || !clip.videoUrl) return;
+    player.src = clip.videoUrl;
+    slot.hidden = false;
+    player.play().catch(() => {});
+  } catch {
+    // No clip on disk yet: leave the slot hidden and say nothing.
+  }
+}
+
 async function showReport() {
   stopTimer();
   showScreen('report');
   const body = $('report-body');
   showLoading(body, 'Building your report...');
+  showCompletionAvatar();
 
   try {
     const report = await state.client.getReport(state.plan.id);

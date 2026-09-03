@@ -24,7 +24,20 @@
  * synthetic portrait, a licensed stock portrait, or someone who has consented.
  */
 
-import { AvatarProvider } from '/vendor/media/interfaces.js';
+/*
+ * Note on the missing import.
+ *
+ * The obvious thing is `import { AvatarProvider } from
+ * '/vendor/media/interfaces.js'` and `extends AvatarProvider`, as
+ * media-adapter.js does. That path is a *browser* URL served by the API's
+ * /vendor mount, so Node resolves it as a filesystem path and the module
+ * cannot be imported outside a browser - which makes it untestable.
+ *
+ * `DefaultSceneRenderer` duck-types its avatar provider (it only ever calls
+ * `generateAvatar`), so this class implements the interface structurally
+ * instead of by inheritance. `prerendered-avatar-provider.test.js` asserts
+ * conformance against the real `AvatarProvider` to keep that honest.
+ */
 
 /** Lesson moments a clip can exist for. */
 export const CLIP_ROLES = Object.freeze([
@@ -58,9 +71,9 @@ async function headProbe(url) {
 
 /**
  * Plays pre-rendered SadTalker clips per lesson moment.
- * @implements {AvatarProvider}
+ * @implements {import('../../../services/media/src/interfaces.js').AvatarProvider}
  */
-export class PrerenderedAvatarProvider extends AvatarProvider {
+export class PrerenderedAvatarProvider {
   /**
    * @param {Object} [options={}]
    * @param {string} [options.basePath='/public/avatars'] - Root the clips are served from.
@@ -68,7 +81,6 @@ export class PrerenderedAvatarProvider extends AvatarProvider {
    * @param {(url: string) => Promise<boolean>} [options.probe] - Existence check; injectable for tests.
    */
   constructor(options = {}) {
-    super();
     this.basePath = String(options.basePath || DEFAULT_BASE_PATH).replace(/\/$/, '');
     this.language = options.language || 'english';
     this.probe = options.probe || headProbe;
@@ -98,7 +110,15 @@ export class PrerenderedAvatarProvider extends AvatarProvider {
    */
   async isAvailable(url) {
     if (this.availability.has(url)) return this.availability.get(url);
-    const exists = await this.probe(url);
+    let exists = false;
+    try {
+      exists = Boolean(await this.probe(url));
+    } catch {
+      // A probe that fails means "cannot confirm", which is treated exactly
+      // like "absent". A transient network error must degrade to the drawn
+      // panel, never propagate out and break the lesson.
+      exists = false;
+    }
     this.availability.set(url, exists);
     return exists;
   }

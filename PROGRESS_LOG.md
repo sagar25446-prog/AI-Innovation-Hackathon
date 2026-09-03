@@ -635,3 +635,124 @@ they drift.
 **5. Before demoing:** start the server, open the app, press **Demo**, and
 confirm **Watch video** is enabled immediately. If it says "Rendering", the
 seeds are stale - see step 4.
+
+---
+
+# ADDENDUM - 2026-09-04 03:40: "implement all the changes"
+
+Follow-up run closing the gaps the summary above listed as open. **The FINAL
+SUMMARY above is superseded where the two disagree**; this addendum is current.
+
+## Node.js installed - the JS tests are no longer unverified
+
+Installed Node 24.19.0 via `winget install OpenJS.NodeJS.LTS`. This was the
+previous run's biggest verification hole.
+
+**Running them immediately found two real defects:**
+
+1. **The provider was not importable outside a browser.** It did
+   `import { AvatarProvider } from '/vendor/media/interfaces.js'` - a *browser*
+   URL served by the API's `/vendor` mount. Node resolved it as
+   `C:/vendor/media/interfaces.js` and the whole test file failed to load. So
+   the module could never have been unit-tested as written.
+
+   *Fix:* the class now implements the interface **structurally** rather than
+   by inheritance. `DefaultSceneRenderer` duck-types its avatar provider (it
+   only ever calls `generateAvatar`), so nothing changes at runtime. Two new
+   conformance tests import the real `AvatarProvider` by relative path and
+   assert the method and arity match, so "structural" stays honest rather than
+   becoming "drifted".
+
+2. **An injected probe that threw crashed the lesson.** `isAvailable` called
+   `this.probe(url)` with no guard. The default probe catches internally, so
+   this was invisible - but any other probe, or a transient network error,
+   would propagate out. My own test asserted the safe behaviour and the
+   implementation did not have it.
+
+   *Fix:* a probe failure now means "cannot confirm" = "absent", degrading to
+   the drawn panel.
+
+**JS results, all now actually executed:**
+
+| Suite | Tests | Result |
+| --- | --- | --- |
+| `apps/web/test` (new) | 21 | pass |
+| `services/media/test` | 34 | pass |
+| `services/visuals/test` | 33 | pass |
+| `packages/contracts/test` | 33 | pass |
+| **Total JS** | **121** | **pass** |
+
+The three pre-existing suites had also never been run on this machine.
+
+## Phase 4's scoped gap: now closed
+
+Both deferred builders implemented, so **no contract visual type falls through
+to the generic layout** - asserted by
+`test_no_contract_visual_type_is_left_on_the_generic_fallback`.
+
+* **`build_timeline`** (History) - directional dated axis with an arrowhead,
+  markers, and events alternating above/below so adjacent labels cannot
+  collide. Accepts `events`/`items`/`points` and `date`/`year`/`when` +
+  `label`/`title`/`text`/`event`, since no fixture pins the shape. Capped at 6
+  events, because more cannot be drawn legibly.
+* **`build_labelled_diagram`** (Biology) - a body with an interior structure
+  and labelled leader lines fanned left/right. Plain `diagram` now routes here;
+  the composite repair descriptor still takes precedence.
+
+**Verified by rendering both** and inspecting frames: the timeline shows
+1857/1919/1930/1947 correctly alternating; the diagram shows five parts with
+leader lines to anchor points, no overlap.
+
+**Honest caveat, written into `docs/KNOWN_LIMITATIONS.md` rather than glossed:**
+these are *schematics*. Diagram label positions are assigned by order, not
+anatomy - it will not show where a chloroplast actually sits. Timeline events
+are spaced evenly in the order given, not proportionally by date, because
+free-text dates ("c. 1500 BCE") cannot be reliably parsed and guessing would
+misinform. Section 2 of that doc now leads with what is implemented and states
+the caveat plainly.
+
+## Avatar clip roles: both gaps closed
+
+* **`complete` is now wired.** The report had no media lifecycle, which is why
+  it was deferred. Rather than force a scene render, the report requests the
+  clip straight from the provider and shows it in a circular player on the
+  report card. Absent clips throw, per the documented contract, and the slot
+  stays hidden - **verified: `report avatar slot hidden: true`** with no clips
+  present, and no layout shift.
+* **`correct` no longer leaks.** The evaluation result is now stamped with the
+  scene index it came from, and `answeredCorrectly` is only true for the scene
+  immediately following that checkpoint.
+
+**Verified end to end in the browser:** a full run probes exactly four distinct
+clip roles - `intro`, `idle`, `repair_transition`, `complete` - and only four
+HEAD requests for an 8-scene lesson, confirming both the role mapping and the
+memoisation.
+
+## Test status
+
+* **Python: 180 passed, 1 skipped** (was 169) - verified in the working env
+  **and** the clean venv without vector extras.
+* **JS: 121 passed** across four suites.
+* Zero tracebacks; the only non-2xx are the four expected avatar probes.
+
+## What genuinely remains
+
+**1. `GEMINI_API_KEY` - I cannot do this one.** There is no key on this machine
+and I will not fabricate one. `apps/api/.env` still does not exist. This is the
+single highest-value remaining item and it is two minutes of your time:
+
+```
+GEMINI_API_KEY=your-key-here
+```
+
+Until then the live LLM upload path stays unrun (its plumbing is unit-tested),
+`/health` reports `"gemini": false`, and off-catalogue topics are honestly
+refused rather than taught.
+
+**2. Avatar clip files.** Unchanged: drop `.mp4`s into
+`apps/web/public/avatars/<language>/<role>.mp4`, then set
+`GURUFLOW_HIDE_BUILTIN_TEACHER=1`. Everything around them is now wired and
+tested, including `complete`.
+
+**3. Anatomical accuracy in diagrams / proportional timelines** - deliberately
+not attempted, documented as a caveat rather than left implied.

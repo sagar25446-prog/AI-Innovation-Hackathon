@@ -163,3 +163,124 @@ def test_every_contract_visual_type_builds_something(visual_type):
 def test_an_unknown_visual_type_falls_back_rather_than_raising():
     mobject, animations = build_visual({"type": "hologram", "data": {"a": "b"}})
     assert mobject is not None
+
+
+# ---------------------------------------------------------------------------
+# timeline (History)
+# ---------------------------------------------------------------------------
+
+
+def test_timeline_is_dispatched_to_a_real_builder():
+    assert BUILDERS["timeline"].__name__ == "build_timeline"
+
+
+def test_timeline_events_accept_several_key_spellings():
+    from services.video.scenes import _timeline_events
+
+    assert _timeline_events({"events": [{"date": "1947", "label": "Independence"}]}) == [
+        {"date": "1947", "label": "Independence"}
+    ]
+    # `year`/`title` and `when`/`event` are equally plausible authoring choices.
+    assert _timeline_events({"items": [{"year": "1930", "title": "Salt March"}]}) == [
+        {"date": "1930", "label": "Salt March"}
+    ]
+    assert _timeline_events({"points": [{"when": "1919", "event": "Bagh"}]}) == [
+        {"date": "1919", "label": "Bagh"}
+    ]
+
+
+def test_timeline_accepts_bare_strings_and_ignores_junk():
+    from services.video.scenes import _timeline_events
+
+    events = _timeline_events({"events": ["Partition", None, 42, {"nothing": "here"}]})
+    assert events == [{"date": "", "label": "Partition"}]
+
+
+def test_timeline_caps_events_so_labels_cannot_collide():
+    from services.video.scenes import _timeline_events
+
+    many = [{"date": str(y), "label": f"e{y}"} for y in range(1900, 1920)]
+    assert len(_timeline_events({"events": many})) == 6
+
+
+def test_timeline_builds_with_events():
+    mobject, animations = build_visual(
+        {
+            "type": "timeline",
+            "data": {
+                "title": "Independence",
+                "events": [
+                    {"date": "1857", "label": "First War"},
+                    {"date": "1947", "label": "Independence"},
+                ],
+            },
+        }
+    )
+    assert mobject.submobjects
+    assert animations
+
+
+def test_timeline_with_no_events_falls_back_cleanly():
+    mobject, animations = build_visual({"type": "timeline", "data": {}})
+    assert mobject is not None
+    assert animations
+
+
+# ---------------------------------------------------------------------------
+# labelled diagram (Biology)
+# ---------------------------------------------------------------------------
+
+
+def test_diagram_parts_accept_several_key_spellings():
+    from services.video.scenes import _diagram_parts
+
+    assert _diagram_parts({"parts": [{"label": "Nucleus"}]}) == ["Nucleus"]
+    assert _diagram_parts({"labels": ["Cell wall"]}) == ["Cell wall"]
+    assert _diagram_parts({"elements": [{"name": "Vacuole"}]}) == ["Vacuole"]
+
+
+def test_labelled_diagram_builds_leader_lines_for_each_part():
+    mobject, animations = build_visual(
+        {
+            "type": "diagram",
+            "data": {
+                "title": "Plant cell",
+                "parts": [{"label": "Nucleus"}, {"label": "Chloroplast"}],
+            },
+        }
+    )
+    assert mobject.submobjects
+    # body, inner, title, leaders, captions
+    assert len(mobject.submobjects) >= 4
+    assert animations
+
+
+def test_a_diagram_with_no_parts_still_falls_back():
+    """A description-only diagram has nothing to label."""
+    mobject, animations = build_visual(
+        {"type": "diagram", "data": {"description": "just prose"}}
+    )
+    assert mobject is not None
+    assert animations
+
+
+def test_the_repair_composite_still_wins_over_the_labelled_path():
+    """A composite must not be mistaken for a plain labelled diagram."""
+    mobject, animations = build_visual(
+        {
+            "type": "diagram",
+            "data": {
+                "composite": True,
+                "equation": {"steps": [{"rawExpression": "I = V / R", "title": "Ohm"}]},
+                "analogy": {"diagramType": "hydraulic_analogy"},
+            },
+        }
+    )
+    assert mobject.submobjects
+    assert animations
+
+
+def test_no_contract_visual_type_is_left_on_the_generic_fallback():
+    """Every type now has a purpose-built builder."""
+    generic = {name for name, fn in BUILDERS.items() if fn.__name__ == "build_fallback"}
+    assert generic == set(), f"still falling back: {generic}"

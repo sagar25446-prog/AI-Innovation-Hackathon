@@ -475,6 +475,12 @@
   <section id="screen-report" class="screen" hidden>
     <div class="card report-card">
       <h2 class="report-title">Your learning report</h2>
+      <!-- Plays the `complete` avatar clip when one exists on disk; stays
+           hidden otherwise, so nothing shifts when clips are absent. -->
+      <div id="report-avatar" class="report-avatar" hidden>
+        <video id="report-avatar-video" class="report-avatar-video"
+               playsinline muted autoplay loop></video>
+      </div>
       <div id="report-body"></div>
       <button id="profile-btn" class="btn btn-ghost btn-lg" type="button" hidden>Show my learning profile</button>
       <button id="report-restart" class="btn btn-primary btn-lg" type="button">Teach me something else</button>
