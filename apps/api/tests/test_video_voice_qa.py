@@ -216,3 +216,90 @@ def test_repair_scene_renders_to_a_playable_video():
     assert result.path.stat().st_size > 10_000
     duration = probe_duration(result.path)
     assert duration and duration > 3
+
+
+# ---------------------------------------------------------------------------
+# Female voice
+# ---------------------------------------------------------------------------
+
+
+def test_teacher_uses_female_neural_voices():
+    """The GuruFlow teacher is female; these are the verified female voices."""
+    from services.voice import VOICE_MAP
+
+    assert VOICE_MAP["english"] == "en-IN-NeerjaNeural"
+    assert VOICE_MAP["hindi"] == "hi-IN-SwaraNeural"
+    assert VOICE_MAP["hinglish"] == "hi-IN-SwaraNeural"
+    # The old male voices must not creep back in.
+    assert "Madhur" not in "".join(VOICE_MAP.values())
+    assert "Prabhat" not in "".join(VOICE_MAP.values())
+
+
+# ---------------------------------------------------------------------------
+# Talking head
+# ---------------------------------------------------------------------------
+
+
+def test_talking_head_is_off_and_harmless_by_default(monkeypatch):
+    from services.video import talking_head
+
+    for key in (
+        "GURUFLOW_TALKING_HEAD",
+        "GURUFLOW_MUSETALK_DIR",
+        "GURUFLOW_TEACHER_IDLE_VIDEO",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    assert talking_head.available() is False
+    assert talking_head.generate(Path("nonexistent.mp3"), Path(".")) is None
+
+
+def test_talking_head_reports_what_is_missing(monkeypatch):
+    from services.video import talking_head
+
+    monkeypatch.setenv("GURUFLOW_TALKING_HEAD", "1")
+    monkeypatch.delenv("GURUFLOW_MUSETALK_DIR", raising=False)
+    monkeypatch.delenv("GURUFLOW_TEACHER_IDLE_VIDEO", raising=False)
+
+    problems = talking_head.config().problems()
+    assert any("MUSETALK_DIR" in p for p in problems)
+    assert any("IDLE_VIDEO" in p for p in problems)
+    assert "GURUFLOW_TALKING_HEAD" not in " ".join(problems)
+
+
+def test_talking_head_status_carries_the_rights_notice():
+    from services.video import talking_head
+
+    status = talking_head.status()
+    assert "rights" in status["portraitRights"].lower()
+    assert "consent" in status["portraitRights"].lower()
+
+
+def test_talking_head_changes_the_video_id(monkeypatch):
+    """A composited photoreal head is a different video from a drawn one."""
+    from services.video import talking_head
+
+    scene = {
+        "narration": "Current flows",
+        "objective": "Explain current",
+        "visual": {"type": "circuit", "data": {}},
+        "durationSeconds": 30,
+    }
+    monkeypatch.setattr(talking_head, "available", lambda: False)
+    drawn = video_service.video_id(scene, "hinglish")
+    monkeypatch.setattr(talking_head, "available", lambda: True)
+    composited = video_service.video_id(scene, "hinglish")
+    assert drawn != composited
+
+
+def test_teacher_panel_rect_is_inside_the_frame_and_h264_safe():
+    from services.video.scenes import teacher_panel_rect
+
+    for width, height in ((854, 480), (1280, 720), (1920, 1080)):
+        x, y, w, h = teacher_panel_rect(width, height)
+        assert 0 <= x and 0 <= y
+        assert x + w <= width and y + h <= height
+        # H.264 requires even dimensions.
+        assert w % 2 == 0 and h % 2 == 0
+        # The panel scales with the frame, so it stays roughly a fifth wide.
+        assert 0.15 < w / width < 0.28

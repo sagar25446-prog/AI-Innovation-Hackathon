@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,10 +28,20 @@ logger = logging.getLogger(__name__)
 
 # Neural voices per teaching language. Hinglish uses a Hindi voice because it
 # pronounces romanised Hindi far better than an English voice does.
+# The GuruFlow teacher is female, so these are the female Indian neural voices.
+# Override per deployment with GURUFLOW_VOICE_<LANGUAGE>, e.g.
+#   set GURUFLOW_VOICE_HINGLISH=hi-IN-MadhurNeural
+# Verified available in edge-tts: en-IN-NeerjaNeural / en-IN-NeerjaExpressiveNeural
+# (female), hi-IN-SwaraNeural (female).
+_DEFAULT_VOICES: dict[str, str] = {
+    "english": "en-IN-NeerjaNeural",
+    "hindi": "hi-IN-SwaraNeural",
+    "hinglish": "hi-IN-SwaraNeural",
+}
+
 VOICE_MAP: dict[str, str] = {
-    "english": "en-IN-PrabhatNeural",
-    "hindi": "hi-IN-MadhurNeural",
-    "hinglish": "hi-IN-MadhurNeural",
+    language: os.environ.get(f"GURUFLOW_VOICE_{language.upper()}", default)
+    for language, default in _DEFAULT_VOICES.items()
 }
 
 # gTTS language codes for the fallback path.
