@@ -10,7 +10,8 @@ not read off the source. Where the verdict is harsh, the evidence is cited.
 
 ## 0. Naming clash worth fixing first
 
-The repo's `docs/CODEX_TASKS_V2.md` defines its own "Task 1 / Task 2 / Task 3"
+The repo's `docs/CODEX_TASKS_V2.md` (since removed, once its sprints were
+complete) defined its own "Task 1 / Task 2 / Task 3"
 as internal team sprints. **These are not the hackathon's Task 1 and Task 2.**
 
 | | Hackathon PDF | Repo `CODEX_TASKS_V2.md` |

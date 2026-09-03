@@ -49,6 +49,13 @@ CACHE_DIR = Path(
 # demonstrating on a slow machine.
 QUALITY = os.environ.get("GURUFLOW_VIDEO_QUALITY", "medium").strip().lower()
 
+# Drop the drawn cartoon teacher from rendered videos. Turn this on once real
+# pre-rendered avatar clips are in place in the web client, so the lesson video
+# does not show a second, competing teacher. Default off.
+HIDE_BUILTIN_TEACHER = os.environ.get(
+    "GURUFLOW_HIDE_BUILTIN_TEACHER", "0"
+).strip().lower() in ("1", "true", "yes", "on")
+
 # Manim's own quality keys; each one already implies resolution and frame rate.
 _QUALITY_MAP = {
     "low": "low_quality",        # 854x480 @ 15fps
@@ -101,9 +108,10 @@ def video_id(scene: dict[str, Any], language: str) -> str:
         "language": language,
         "quality": QUALITY,
         # Bump when the renderer's look changes so stale videos are not served.
-        "renderer": "v2",
+        "renderer": "v3",
         # A composited photoreal head is a different video from a drawn one.
         "talkingHead": talking_head.available(),
+        "hideBuiltInTeacher": HIDE_BUILTIN_TEACHER,
     }
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:20]
@@ -233,6 +241,7 @@ def render_scene_video(
 
         payload = {
             "teacherSlot": use_talking_head,
+            "hideBuiltInTeacher": HIDE_BUILTIN_TEACHER,
             "objective": scene.get("objective", ""),
             "visual": scene.get("visual", {}),
             "captions": captions,
@@ -336,6 +345,47 @@ def prerender_lesson(scenes: list[dict[str, Any]], language: str = "hinglish") -
     return ids
 
 
+# Videos committed to the repo for demo day. Seeded into the cache at startup
+# so the demo lesson plays instantly with zero render risk.
+SEED_DIR = Path(__file__).resolve().parents[2] / "demo-assets" / "videos"
+
+
+def seed_cache_from_repo(seed_dir: Path | None = None) -> dict[str, Any]:
+    """Copy committed demo videos into the runtime cache.
+
+    Idempotent and safe to call on every startup: a file already present in the
+    cache is left alone, so a locally re-rendered video is never clobbered by
+    the committed one.
+
+    Returns a summary for logging and /health.
+    """
+    source = seed_dir or SEED_DIR
+    result: dict[str, Any] = {"seeded": 0, "skipped": 0, "source": str(source)}
+    if not source.exists():
+        result["available"] = False
+        return result
+    result["available"] = True
+
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    for video in sorted(source.glob("*.mp4")):
+        target = CACHE_DIR / video.name
+        if target.exists() and target.stat().st_size > 0:
+            result["skipped"] += 1
+            continue
+        try:
+            # Copy to a scratch name and rename, so a half-copied file is never
+            # observable as "ready" by a concurrent request.
+            staging = CACHE_DIR / f"{video.name}.seeding"
+            shutil.copy2(video, staging)
+            staging.replace(target)
+            result["seeded"] += 1
+        except Exception as exc:
+            logger.warning("Could not seed %s: %s", video.name, exc)
+    if result["seeded"]:
+        logger.info("Seeded %s demo video(s) from %s", result["seeded"], source)
+    return result
+
+
 def cache_stats() -> dict[str, Any]:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     files = list(CACHE_DIR.glob("*.mp4"))
@@ -346,4 +396,7 @@ def cache_stats() -> dict[str, Any]:
         "quality": QUALITY,
         "available": video_generation_available(),
         "talkingHead": talking_head.status(),
+        "hideBuiltInTeacher": HIDE_BUILTIN_TEACHER,
+        "seedDir": str(SEED_DIR),
+        "seedAvailable": SEED_DIR.exists(),
     }

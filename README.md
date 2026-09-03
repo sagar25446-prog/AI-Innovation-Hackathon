@@ -147,7 +147,15 @@ curl -X POST http://127.0.0.1:8077/lessons/LESSON_ID/flashcards \
 ```
 
 See [the integrated product](docs/INTEGRATED_PRODUCT.md) for the architecture,
-the flagship feature and the SWOT analysis.
+the flagship feature and the SWOT analysis, and
+**[known limitations](docs/KNOWN_LIMITATIONS.md)** for an honest account of
+offline mode vs. an LLM-configured deployment - read that one before demoing.
+
+> **Set `GEMINI_API_KEY` before judging.** Without it GuruFlow teaches the
+> built-in Electricity chapter and any electricity document you upload, and
+> honestly refuses other topics rather than teaching the wrong subject. With
+> it, "teach any topic" actually works. Create `apps/api/.env` with
+> `GEMINI_API_KEY=...` (free key: <https://aistudio.google.com/apikey>).
 
 ## Team ownership
 
@@ -161,7 +169,7 @@ Read [team implementation](docs/TEAM_IMPLEMENTATION.md) and the
 [integrated product](docs/INTEGRATED_PRODUCT.md) notes before extending the
 system. The integration contract is defined by
 [packages/contracts/](packages/contracts/README.md). A submission/delivery
-checklist lives in [docs/CODEX_TASKS_V2.md](docs/CODEX_TASKS_V2.md).
+checklist lives in [docs/TEAM_IMPLEMENTATION.md](docs/TEAM_IMPLEMENTATION.md).
 
 ## First integration milestone
 

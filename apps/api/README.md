@@ -13,9 +13,19 @@ python -m pip install -r apps/api/requirements.txt
 python -m uvicorn apps.api.main:app --reload --port 8077
 ```
 
-Everything in `requirements.txt` installs from wheels on Windows, macOS and
-Linux with no compiler. Semantic vector RAG is deliberately optional because
-`chroma-hnswlib` needs a C++ toolchain:
+Everything in `requirements.txt` installs from wheels on Windows with no
+compiler toolchain.
+
+> **Video renderer failing to install?** Manim draws through Cairo and Pango,
+> which need system libraries on Linux and macOS. If you see
+> `RequiredDependencyException: pangocairo >= 1.30.0 is required` or a failed
+> `pycairo` build, see
+> **[docs/VIDEO_INSTALL_TROUBLESHOOTING.md](../../docs/VIDEO_INSTALL_TROUBLESHOOTING.md)**
+> for the exact per-platform fix. Nothing else in the product breaks without
+> it - only MP4 rendering.
+
+Semantic vector RAG is deliberately optional because `chroma-hnswlib` needs a
+C++ toolchain:
 
 ```bash
 python -m pip install -r apps/api/requirements-vector.txt   # optional
@@ -32,7 +42,7 @@ Run from the repository root so `services/` resolves.
 python -m pytest apps/api/tests -q
 ```
 
-98 tests cover the planner, the evaluation branches, multi-format upload (PDF /
+125 tests cover the planner, the evaluation branches, multi-format upload (PDF /
 DOCX / PPTX / TXT), real diagram rendering, long-term student memory, flashcards,
 gamified study modes, spaced multi-day revision planning and the judge-critical
 API path. Two of the suites are end-to-end regression guards: **upload -> plan**
