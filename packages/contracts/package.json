@@ -4,6 +4,7 @@
   "description": "GuruFlow lesson contract schemas and validation",
   "main": "validate.js",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "validate": "node validate.js ../../demo-fixtures/*.json"
   },
   "author": "GuruFlow Team",

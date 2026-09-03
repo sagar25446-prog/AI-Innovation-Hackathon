@@ -3,10 +3,14 @@
 This is the adaptive half of the product loop. A wrong answer is never met with
 "Wrong." -- it produces a diagnosis, supportive feedback and a *different*
 teaching scene that attacks the specific misconception, followed by a retry.
+
+When GEMINI_API_KEY is set, evaluation uses Gemini Flash for semantic answer
+classification while keeping the rule-based path as fallback.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from services.evaluation.misconceptions import (
@@ -16,6 +20,8 @@ from services.evaluation.misconceptions import (
     misconception_id,
 )
 from services.planner.concepts import CHECKPOINT_CONCEPT_ID, NEXT_TOPIC
+
+logger = logging.getLogger(__name__)
 
 # Mastery values are fixed by the demo fixtures so the API and
 # ``demo-fixtures/`` never disagree.
@@ -179,7 +185,49 @@ def evaluate_answer(
 
     ``attempt`` is 1-based: attempt 1 is the learner's first try, attempt 2+
     means they are retrying after a repair scene.
+
+    Tries Gemini Flash first for semantic classification, falls back to
+    rule-based if the LLM is unavailable or fails.
     """
+    # Try LLM evaluation first (skip for multiple-choice which is deterministic)
+    if not option_id:
+        try:
+            from services.llm import evaluate_answer_llm, gemini_available
+            if gemini_available():
+                llm_result = evaluate_answer_llm(answer, language, attempt)
+                if llm_result and "classification" in llm_result:
+                    classification = llm_result["classification"]
+                    if classification == "correct":
+                        first_try = attempt <= 1
+                        mastery = MASTERY_FIRST_TRY_CORRECT if first_try else MASTERY_AFTER_REPAIR
+                        return {
+                            "correct": True,
+                            "mastery": mastery,
+                            "feedback": llm_result.get("feedback", FEEDBACK["correct_first" if first_try else "correct_retry"][language]),
+                            "nextAction": "advance",
+                        }
+                    if classification == "unclear":
+                        return {
+                            "correct": False,
+                            "mastery": MASTERY_UNCLEAR,
+                            "feedback": llm_result.get("feedback", FEEDBACK["unclear"][language]),
+                            "nextAction": "retry",
+                        }
+                    # Misconception
+                    misconception = misconception_id(classification)
+                    if misconception:
+                        return {
+                            "correct": False,
+                            "mastery": MASTERY_MISCONCEPTION,
+                            "misconception": misconception,
+                            "feedback": llm_result.get("feedback", FEEDBACK.get(classification, {}).get(language, "Let me explain this differently.")),
+                            "nextAction": "repair",
+                            "repairScene": build_repair_scene(misconception, language),
+                        }
+        except Exception as exc:
+            logger.warning("LLM evaluation failed, falling back to rule-based: %s", exc)
+
+    # Deterministic fallback
     classification = classify_answer(answer, option_id)
 
     if classification == "correct":

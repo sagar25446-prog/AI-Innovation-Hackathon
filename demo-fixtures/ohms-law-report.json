@@ -1,9 +1,9 @@
 {
-  "studentId": "student-demo",
+  "studentId": "student-demo-1",
   "lessonId": "lesson-ohms-law-beginner-hinglish",
-  "score": 0.7,
-  "strongConcepts": ["current", "voltage"],
-  "weakConcepts": ["resistance-current-relationship"],
+  "score": 0.85,
+  "strongConcepts": ["electric-current", "voltage", "ohms-law-formula"],
+  "weakConcepts": ["resistance-current-inverse-relationship"],
   "misconceptions": [
     {
       "id": "direct-proportionality-confusion",
@@ -12,8 +12,8 @@
     }
   ],
   "revisionActions": [
-    "Practice more I=V/R calculations with different R values",
-    "Try the water pipe simulation"
+    "Practice more I = V/R calculations with varying resistance values",
+    "Review water-pipe hydraulic analogy model"
   ],
   "nextTopic": {
     "id": "series-parallel-circuits",

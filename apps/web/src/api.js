@@ -60,14 +60,20 @@ export class GuruFlowClient {
     try {
       const health = await request('/health');
       this.mode = health.status === 'ok' ? 'api' : 'fixture';
+      this.gemini = Boolean(health && health.gemini);
     } catch {
       this.mode = 'fixture';
+      this.gemini = false;
     }
     return this.mode;
   }
 
   get isLive() {
     return this.mode === 'api';
+  }
+
+  get isGeminiLive() {
+    return this.isLive && this.gemini;
   }
 
   /* --------------------------------------------------------------- */
@@ -91,20 +97,80 @@ export class GuruFlowClient {
     };
   }
 
-  async createPlan({ learner, materialId, topic }) {
+  async uploadFile(file) {
+    if (this.isLive) {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetch('/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`Upload failed: ${response.status} ${detail.slice(0, 160)}`);
+      }
+      return response.json();
+    }
+    // Fixture fallback for demo mode
+    return {
+      materialId: 'material-ncert-class9-science-ch12',
+      documentId: 'ncert-class9-science-ch12',
+      title: 'NCERT Class 9 Science - Chapter 12: Electricity (fixture)',
+      status: 'ready',
+      origin: 'fixture',
+      sectionCount: 7,
+      pageCount: 6,
+      sections: [],
+    };
+  }
+
+  async createPlan({ learner, materialId, topic, studyMode = 'lesson' }) {
     if (this.isLive) {
       return request('/lessons/plan', {
         method: 'POST',
-        body: JSON.stringify({ learner, materialId, topic, studentId: 'student-demo' }),
+        body: JSON.stringify({ learner, materialId, topic, studentId: 'student-demo', studyMode }),
       });
     }
     const plan = await loadFixture('ohms-law-beginner-hinglish.json');
     plan.topic = topic;
-    plan.tier = 'fixture';
+    plan.studyMode = studyMode;
+    plan.tier = studyMode === 'exam' ? 'exam-drill' : 'fixture';
     plan.estimatedSeconds = plan.scenes.reduce((sum, s) => sum + s.durationSeconds, 0);
     plan.documentTitle = 'NCERT Class 9 Science - Chapter 12 (fixture)';
     this.fixturePlan = plan;
     return plan;
+  }
+
+  async getStudyPlan(studentId) {
+    if (this.isLive) {
+      try {
+        return await request(`/students/${studentId}/study-plan`);
+      } catch (err) {
+        if (String(err.message).startsWith('404')) return null;
+        throw err;
+      }
+    }
+    // Fixture mode: a plausible 7-day spaced-revision schedule.
+    const today = new Date().toISOString().slice(0, 10);
+    const plus = (d) => {
+      const t = new Date();
+      t.setDate(t.getDate() + d);
+      return t.toISOString().slice(0, 10);
+    };
+    return {
+      studentId,
+      strategy: 'spaced-repetition',
+      horizonDays: 7,
+      weakConcepts: this.progress.misconception ? ['ohms-law-application'] : [],
+      strongConcepts: ['current', 'voltage', 'resistance', 'ohms-law'],
+      sessions: [
+        { day: 1, date: today, title: 'Relearn what you missed', conceptIds: ['ohms-law-application'], sessionMinutes: 5, mode: 'revision' },
+        { day: 2, date: plus(1), title: 'Reinforce today', conceptIds: ['ohms-law', 'ohms-law-application'], sessionMinutes: 10, mode: 'revision' },
+        { day: 4, date: plus(3), title: 'Bring back borderline ideas', conceptIds: ['resistance', 'ohms-law', 'ohms-law-application'], sessionMinutes: 15, mode: 'revision' },
+        { day: 7, date: plus(6), title: 'Full mixed review', conceptIds: ['current', 'voltage', 'resistance', 'ohms-law', 'ohms-law-application', 'lesson-summary'], sessionMinutes: 30, mode: 'revision' },
+      ],
+      totalReviewMinutes: 60,
+    };
   }
 
   async switchLanguage(lessonId, language) {
@@ -180,5 +246,56 @@ export class GuruFlowClient {
       report.misconceptions = [this.progress.misconception];
     }
     return report;
+  }
+
+  async getProfile(studentId) {
+    if (this.isLive) {
+      try {
+        return await request(`/students/${studentId}/profile`);
+      } catch (err) {
+        if (String(err.message).startsWith('404')) return null;
+        throw err;
+      }
+    }
+    // Fixture mode: a small, sensible long-term profile built from this lesson.
+    return {
+      studentId,
+      lessonsCompleted: 1,
+      avgScore: this.progress.passed ? 0.9 : 0.5,
+      weakConcepts: this.progress.misconception
+        ? ['ohms-law-practice', 'ohms-law-application']
+        : [],
+      recurringMisconceptions: this.progress.misconception
+        ? [this.progress.misconception.id]
+        : [],
+      misconceptions: this.progress.misconception
+        ? [{ id: this.progress.misconception.id, status: 'open', count: 1 }]
+        : [],
+      lessons: [
+        {
+          lessonId: 'demo',
+          topic: "Ohm's Law",
+          score: this.progress.passed ? 0.9 : 0.5,
+          weekName: 'This session',
+        },
+      ],
+    };
+  }
+
+  async getFlashcards(lessonId, conceptIds) {
+    if (this.isLive) {
+      return request(`/lessons/${lessonId}/flashcards`, {
+        method: 'POST',
+        body: JSON.stringify({ conceptIds: conceptIds || undefined }),
+      });
+    }
+    const cards = [
+      { conceptId: 'electric-current', front: 'What is current?', back: 'The flow of electric charge, measured in amperes (A).' },
+      { conceptId: 'voltage', front: 'What is voltage?', back: 'The electric push between two points that drives current.' },
+      { conceptId: 'resistance', front: 'What is resistance?', back: 'It opposes current flow, measured in ohms (Ω).' },
+      { conceptId: 'ohms-law', front: 'State Ohm\u2019s Law.', back: 'V = I × R. Voltage equals current times resistance.' },
+    ];
+    if (conceptIds) return { cards: cards.filter((c) => conceptIds.includes(c.conceptId)) };
+    return { cards };
   }
 }

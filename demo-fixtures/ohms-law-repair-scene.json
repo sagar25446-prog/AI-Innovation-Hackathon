@@ -1,21 +1,248 @@
 {
   "id": "scene-repair-ohms-law",
   "conceptId": "ohms-law",
-  "objective": "Correct direct-proportionality misconception",
-  "narration": "Socho ek pipe mein paani beh raha hai. Agar pipe ko narrow kar do (matlab resistance badhao), toh paani ka flow (matlab current) KAM hoga, zyada nahi! Isi tarah, I = V/R mein, jab R badhta hai toh I GHATTA hai.",
+  "objective": "Correct direct-proportionality misconception using equation transformation, water-pipe hydraulic analogy, and descending I-vs-R curve",
+  "narration": "Socho ek water pipe mein paani beh raha hai. Agar pipe ko narrow kar do (matlab resistance badhao), toh paani ka flow (matlab current) KAM hoga, zyada nahi! Isi tarah formula I = V/R mein, jab Resistance R denominator mein badhta hai, toh Current I ghat'ta hai.",
   "visual": {
-    "type": "equation",
+    "type": "diagram",
     "data": {
-      "steps": ["I = V / R", "↑ Resistance = ↓ Current"],
-      "analogy": "water-pipe"
+      "composite": true,
+      "diagramType": "compound_repair",
+      "title": "Ohm's Law Misconception Repair: Inverse Proportionality (I = V/R)",
+      "equation": {
+        "title": "Formula Transformation: I = V / R",
+        "format": "katex",
+        "steps": [
+          {
+            "stepIndex": 0,
+            "id": "step-1",
+            "title": "Ohm's Law Standard Formula",
+            "label": "Ohm's Law Standard Formula",
+            "rawExpression": "V = I * R",
+            "expression": "V = I \\cdot R",
+            "latex": "V = I \\cdot R",
+            "explanation": "Potential difference (V) equals Current (I) multiplied by Resistance (R).",
+            "caption": "Potential difference (V) equals Current (I) multiplied by Resistance (R).",
+            "highlightedTerms": ["V", "I", "R"],
+            "highlight": false
+          },
+          {
+            "stepIndex": 1,
+            "id": "step-2",
+            "title": "Rearrange Solving for Current (I)",
+            "label": "Rearrange Solving for Current (I)",
+            "rawExpression": "I = V / R",
+            "expression": "I = \\frac{V}{R}",
+            "latex": "I = \\frac{V}{R}",
+            "explanation": "Dividing both sides by Resistance (R) isolates Current (I).",
+            "caption": "Dividing both sides by Resistance (R) isolates Current (I).",
+            "highlightedTerms": ["I", "V", "R"],
+            "highlight": true,
+            "misconceptionAnnotation": {
+              "flag": "inverse_proportionality",
+              "note": "Resistance (R) is in the denominator. As R increases at constant V, I decreases."
+            }
+          },
+          {
+            "stepIndex": 2,
+            "id": "step-3",
+            "title": "Substitute Given Values",
+            "label": "Substitute Given Values",
+            "rawExpression": "I = 10 / 5 = 2A",
+            "expression": "I = \\frac{10\\text{ V}}{5\\,\\Omega} = 2\\text{ A}",
+            "latex": "I = \\frac{10\\text{ V}}{5\\,\\Omega} = 2\\text{ A}",
+            "explanation": "Substitute V = 10V and R = 5Ω to compute I = 2A.",
+            "caption": "Substitute V = 10V and R = 5Ω to compute I = 2A.",
+            "highlightedTerms": ["I", "2A"],
+            "highlight": false
+          },
+          {
+            "stepIndex": 3,
+            "id": "step-4",
+            "title": "Key Proportionality Rule",
+            "label": "Key Proportionality Rule",
+            "rawExpression": "R up => I down (constant V)",
+            "expression": "\\uparrow R \\implies \\downarrow I \\quad (\\text{at constant } V)",
+            "latex": "\\uparrow R \\implies \\downarrow I \\quad (\\text{at constant } V)",
+            "explanation": "Resistance opposes current: higher resistance means less current flow.",
+            "caption": "Resistance opposes current: higher resistance means less current flow.",
+            "highlightedTerms": ["R", "I"],
+            "highlight": true,
+            "misconceptionAnnotation": {
+              "flag": "direct_vs_inverse_proportionality",
+              "note": "Direct proportionality confusion resolved: I is inversely proportional to R."
+            }
+          }
+        ],
+        "variables": {
+          "V": { "symbol": "V", "name": "Voltage (Potential Difference)", "unit": "Volts (V)", "role": "Driving force", "value": "10V" },
+          "I": { "symbol": "I", "name": "Current (Charge Flow Rate)", "unit": "Amperes (A)", "role": "Rate of charge flow", "value": "2A" },
+          "R": { "symbol": "R", "name": "Resistance (Flow Opposition)", "unit": "Ohms (Ω)", "role": "Opposition to charge flow", "value": "5Ω" }
+        },
+        "highlight": "step-2",
+        "highlightStepId": "step-2"
+      },
+      "analogy": {
+        "title": "Hydraulic Analogy: Pipe Constriction vs Current Flow",
+        "diagramType": "hydraulic_analogy",
+        "elements": [
+          {
+            "id": "water_pump",
+            "type": "water_pump",
+            "label": "Water Pump (Voltage / Pressure)",
+            "electricalEquivalent": "Battery / Voltage Source (V)",
+            "formulaSymbol": "V",
+            "role": "Pressure Generator",
+            "position": { "x": 80, "y": 160 },
+            "coordinates": { "x": 80, "y": 160, "width": 90, "height": 90 },
+            "pressurePsi": 10,
+            "state": "active",
+            "description": "Pump creates water pressure differential, just as a battery creates electric potential difference."
+          },
+          {
+            "id": "pipe_constriction",
+            "type": "pipe_constriction",
+            "label": "Narrow Constriction (Resistance, R)",
+            "electricalEquivalent": "Resistor (R)",
+            "formulaSymbol": "R",
+            "role": "Flow Restriction",
+            "position": { "x": 300, "y": 60 },
+            "coordinates": { "x": 300, "y": 60, "width": 120, "height": 40 },
+            "constrictionFactor": 0.75,
+            "description": "Constriction restricts water throughput, just as resistance impedes electron flow."
+          },
+          {
+            "id": "water_flow",
+            "type": "water_flow",
+            "label": "Water Flow Rate (Current, I)",
+            "electricalEquivalent": "Current (I)",
+            "formulaSymbol": "I",
+            "role": "Volume Flow Rate",
+            "position": { "x": 300, "y": 260 },
+            "coordinates": { "x": 300, "y": 260, "width": 140, "height": 50 },
+            "flowRate": "2.0 L/s",
+            "velocityVector": { "vx": 4, "vy": 0 },
+            "description": "Volume of water passing per second, directly analogous to electric charge flow per second."
+          },
+          {
+            "id": "pipe_reservoir",
+            "type": "pipe_reservoir",
+            "label": "Return Pipe (Conductor/Ground)",
+            "electricalEquivalent": "Return Wire / Ground",
+            "position": { "x": 80, "y": 280 },
+            "coordinates": { "x": 80, "y": 280, "width": 100, "height": 40 },
+            "description": "Completes the closed hydraulic circuit."
+          }
+        ],
+        "coordinateBounds": { "width": 600, "height": 420, "viewBox": "0 0 600 420", "padding": 20 },
+        "flowParticles": {
+          "count": 24,
+          "velocity": { "x": 4, "y": 0 },
+          "direction": "clockwise",
+          "speed": "slow",
+          "active": true,
+          "color": "#06B6D4"
+        },
+        "comparisonMappingTable": [
+          { "hydraulicElement": "Water Pump Pressure (P)", "electricalEquivalent": "Voltage (V)", "formulaSymbol": "V", "concept": "Pushing force that initiates flow", "unit": "Pascal (Pa) ↔ Volt (V)" },
+          { "hydraulicElement": "Pipe Constriction / Narrowness", "electricalEquivalent": "Resistance (R)", "formulaSymbol": "R", "concept": "Physical opposition to fluid/charge movement", "unit": "Hydraulic Resistance ↔ Ohm (Ω)" },
+          { "hydraulicElement": "Water Flow Rate (Q)", "electricalEquivalent": "Current (I)", "formulaSymbol": "I", "concept": "Rate of volume/charge passing per second", "unit": "Liters/sec (L/s) ↔ Ampere (A)" },
+          { "hydraulicElement": "Closed Pipe Loop", "electricalEquivalent": "Closed Electric Circuit", "formulaSymbol": "Loop", "concept": "Continuous unbroken path required for circulation", "unit": "N/A" }
+        ],
+        "scenarioStates": {
+          "widePipe": { "label": "Wide Pipe (Low Resistance)", "resistanceLevel": "low", "flowLevel": "high", "currentA": "4.0A", "pressure": "10V", "description": "Wide pipe offers little resistance; water flows quickly." },
+          "constrictedPipe": { "label": "Narrow Constriction (High Resistance)", "resistanceLevel": "high", "flowLevel": "low", "currentA": "1.0A", "pressure": "10V", "description": "Narrow pipe creates high resistance; water flow drops dramatically." }
+        },
+        "currentScenario": "constrictedPipe",
+        "annotations": [
+          "Narrowing the pipe (higher R) REDUCES the flow rate of water (lower I).",
+          "Higher pump pressure (higher V) INCREASES the flow rate of water (higher I)."
+        ]
+      },
+      "graph": {
+        "title": "Current (I) vs Resistance (R) at Constant Voltage (V = 10V)",
+        "graphType": "inverse_proportionality",
+        "xAxis": { "label": "Resistance (R)", "symbol": "R", "unit": "Ω", "min": 0, "max": 20, "tickInterval": 2, "ticks": [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20], "scale": "linear" },
+        "yAxis": { "label": "Current (I)", "symbol": "I", "unit": "A", "min": 0, "max": 12, "tickInterval": 2, "ticks": [0, 2, 4, 6, 8, 10, 12], "scale": "linear" },
+        "gridlines": { "show": true, "xStep": 2, "yStep": 2, "color": "#E2E8F0", "strokeDasharray": "3 3" },
+        "series": [
+          {
+            "id": "series-i-vs-r",
+            "name": "I = 10 / R",
+            "label": "Current I = 10/R",
+            "curveType": "inverse_proportionality",
+            "type": "curve",
+            "formula": "I = 10 / R",
+            "mathematicalFormula": "I = \\frac{10}{R}",
+            "color": "#3B82F6",
+            "strokeWidth": 3,
+            "points": [
+              { "x": 1, "y": 10 },
+              { "x": 1.5, "y": 6.667 },
+              { "x": 2, "y": 5 },
+              { "x": 2.5, "y": 4 },
+              { "x": 3, "y": 3.333 },
+              { "x": 4, "y": 2.5 },
+              { "x": 5, "y": 2 },
+              { "x": 6, "y": 1.667 },
+              { "x": 8, "y": 1.25 },
+              { "x": 10, "y": 1 },
+              { "x": 12, "y": 0.833 },
+              { "x": 14, "y": 0.714 },
+              { "x": 15, "y": 0.667 },
+              { "x": 16, "y": 0.625 },
+              { "x": 18, "y": 0.556 },
+              { "x": 20, "y": 0.5 }
+            ]
+          }
+        ],
+        "points": [
+          { "x": 1, "y": 10 },
+          { "x": 1.5, "y": 6.667 },
+          { "x": 2, "y": 5 },
+          { "x": 2.5, "y": 4 },
+          { "x": 3, "y": 3.333 },
+          { "x": 4, "y": 2.5 },
+          { "x": 5, "y": 2 },
+          { "x": 6, "y": 1.667 },
+          { "x": 8, "y": 1.25 },
+          { "x": 10, "y": 1 },
+          { "x": 12, "y": 0.833 },
+          { "x": 14, "y": 0.714 },
+          { "x": 15, "y": 0.667 },
+          { "x": 16, "y": 0.625 },
+          { "x": 18, "y": 0.556 },
+          { "x": 20, "y": 0.5 }
+        ],
+        "highlightedOperatingPoints": [
+          { "x": 5, "y": 2, "label": "R = 5Ω, I = 2A", "description": "Base operating point", "color": "#10B981" },
+          { "x": 10, "y": 1, "label": "R = 10Ω, I = 1A", "description": "Doubled resistance halves current", "color": "#EF4444" }
+        ],
+        "annotations": [
+          { "x": 10, "y": 1, "text": "As Resistance (R) increases, Current (I) decreases (Inverse Proportionality)", "trend": "descending", "position": "top-right" }
+        ],
+        "formula": "I = 10 / R"
+      },
+      "misconception": {
+        "diagnosed": "direct-proportionality confusion",
+        "description": "Learner assumed current increases when resistance increases",
+        "correctPrinciple": "At constant voltage, Current (I) is inversely proportional to Resistance (R): I = V/R",
+        "formulaCorrection": "I = \\frac{V}{R} \\implies \\uparrow R \\implies \\downarrow I"
+      },
+      "layout": {
+        "mode": "multi_panel",
+        "panels": ["equation", "analogy", "graph"],
+        "responsive": true
+      }
     }
   },
   "citations": [
     {
       "documentId": "ncert-class9-science-ch12",
       "pageOrSlide": 205,
+      "heading": "12.3 Ohm's Law",
       "excerpt": "It is obvious from Eq. (12.5) that the current through a resistor is inversely proportional to its resistance."
     }
   ],
-  "durationSeconds": 30
+  "durationSeconds": 35
 }

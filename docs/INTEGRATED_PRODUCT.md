@@ -156,8 +156,12 @@ Two supporting features make the flagship credible rather than a demo trick:
 ### Weaknesses
 
 * **Content depth is one chapter.** The concept catalogue is hand-authored for
-  Class 9 Electricity. A new topic gets the honest "general knowledge" label
-  but no real teaching content - the product does not yet generalise.
+  Class 9 Electricity. For an unknown topic offline, the planner now returns an
+  explicit "unsupported topic" honesty scene (never fabricating a citation and
+  never silently teaching Electricity) and points the learner at either
+  uploading a document or enabling an LLM key - but the generalised "teach me
+  any subject" capability still requires the live Gemini path. The product does
+  not yet generalise beyond Electricity without an LLM key.
 * **No LLM in the loop.** Everything is deterministic. That is the right
   hackathon call (it is why the demo never fails) but it means the "AI teacher"
   currently *retrieves, plans and diagnoses* rather than *generates*.

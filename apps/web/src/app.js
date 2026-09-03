@@ -31,6 +31,7 @@ const state = {
   timer: null,
   elapsed: 0,
   voiceOn: false,
+  uploadedFile: null,
 };
 
 const MCQ_OPTIONS = [
@@ -50,20 +51,32 @@ const MISCONCEPTION_EXPLAIN = {
  * Screen handling
  * ------------------------------------------------------------------ */
 
-function showScreen(name) {
-  ['onboarding', 'plan', 'classroom', 'report'].forEach((screen) => {
+const SCREENS = ['landing', 'onboarding', 'plan', 'classroom', 'report', 'profile'];
+
+function showScreen(name, opts = {}) {
+  SCREENS.forEach((screen) => {
     $(`screen-${screen}`).hidden = screen !== name;
   });
-  $('restart-btn').hidden = name === 'onboarding';
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  $('restart-btn').hidden = name === 'onboarding' || name === 'landing';
+  document.querySelectorAll('.nav-link').forEach((link) => {
+    link.classList.toggle('active', link.dataset.nav === name);
+  });
+  const smooth = opts.instant ? 'auto' : 'smooth';
+  window.scrollTo({ top: 0, behavior: smooth });
 }
 
 function setModeBadge() {
   const badge = $('mode-badge');
-  if (state.client.isLive) {
-    badge.textContent = 'live teacher brain';
+  if (state.client.isGeminiLive) {
+    badge.textContent = 'live Gemini brain';
     badge.className = 'badge badge-good';
-    badge.title = 'Lessons are planned and evaluated by the API';
+    badge.title = 'Planning and evaluation run live on Gemini Flash';
+  } else if (state.client.isLive) {
+    badge.textContent = 'live API (add GEMINI_API_KEY)';
+    badge.className = 'badge badge-warn';
+    badge.title =
+      'API connected, but no GEMINI_API_KEY set - using deterministic fallback. ' +
+      'Set apps/api/.env GEMINI_API_KEY=... to enable live Gemini.';
   } else {
     badge.textContent = 'fixture mode';
     badge.className = 'badge badge-warn';
@@ -76,12 +89,24 @@ function setModeBadge() {
  * ------------------------------------------------------------------ */
 
 function readLearner() {
+  const sliderEl = $('minutes-slider');
+  const minutes = sliderEl ? Number(sliderEl.value) : Number($('minutes').value);
   return {
     level: $('level').value,
     language: $('language').value,
-    availableMinutes: Number($('minutes').value),
+    availableMinutes: minutes > 0 ? minutes : 20,
     goal: $('goal').value.trim() || 'Understand the topic',
   };
+}
+
+function showDroppedFile(file) {
+  const note = $('dropzone-note');
+  if (!file || !note) return;
+  note.hidden = false;
+  const size = file.size > 1048576
+    ? `${(file.size / 1048576).toFixed(1)} MB`
+    : `${Math.round(file.size / 1024)} KB`;
+  note.textContent = `Ready to teach from: ${file.name} (${size})`;
 }
 
 async function handleOnboarding(event) {
@@ -95,17 +120,33 @@ async function handleOnboarding(event) {
   try {
     const topic = $('topic').value.trim() || "Ohm's Law";
     const text = $('material-text').value.trim();
+    const fileInput = $('material-file');
+    const file = fileInput && fileInput.files && fileInput.files[0];
 
     state.learner = readLearner();
-    state.material = await state.client.createMaterial({
-      topic,
-      text: text || undefined,
-      title: text ? 'Pasted material' : undefined,
-    });
+
+    // Handle file upload
+    if (file) {
+      state.material = await state.client.uploadFile(file);
+    } else if (text) {
+      state.material = await state.client.createMaterial({
+        topic,
+        text,
+        title: 'Pasted material',
+      });
+    } else {
+      state.material = await state.client.createMaterial({
+        topic,
+        text: undefined,
+        title: undefined,
+      });
+    }
+
     state.plan = await state.client.createPlan({
       learner: state.learner,
       materialId: state.material.materialId,
       topic,
+      studyMode: $('study-mode').value,
     });
     state.scenes = state.plan.scenes.map((scene) => ({ ...scene }));
     state.sceneIndex = 0;
@@ -177,6 +218,14 @@ function formatDuration(seconds) {
   return mins ? `${mins}m ${secs.toString().padStart(2, '0')}s` : `${secs}s`;
 }
 
+function modeLabel(mode) {
+  return {
+    lesson: 'Lesson mode',
+    exam: 'Exam prep',
+    revision: 'Quick revision',
+  }[mode] || 'Lesson mode';
+}
+
 function renderPlan() {
   const plan = state.plan;
   const meta = $('plan-meta');
@@ -185,6 +234,10 @@ function renderPlan() {
   const chips = [
     { text: plan.learner.level, cls: 'badge-accent' },
     { text: plan.learner.language, cls: 'badge-accent' },
+    {
+      text: modeLabel(plan.studyMode),
+      cls: plan.studyMode === 'lesson' ? 'badge-accent' : 'badge-good',
+    },
     { text: `${plan.scenes.length} scenes`, cls: 'badge-muted' },
     {
       text: `${formatDuration(plan.estimatedSeconds || 0)} of ${plan.learner.availableMinutes}m budget`,
@@ -252,6 +305,7 @@ function startScene() {
   stopTimer();
   state.elapsed = 0;
 
+  renderClasspath();
   $('scene-objective').textContent = scene.objective;
 
   const grounded = (scene.citations || []).length > 0;
@@ -264,6 +318,7 @@ function startScene() {
 
   // Render the scene through services/media, then drive captions from it.
   state.media.render(scene, state.plan.learner.language).then((mediaResult) => {
+    state.lastMediaResult = mediaResult;
     const status = $('media-status');
     if (mediaResult.status === 'degraded') {
       status.textContent = 'degraded - captions only';
@@ -298,13 +353,43 @@ function startScene() {
     $('next-scene').textContent = 'Try the question again';
   }
 
+  // Play the scene-transition entrance animation (re-trigger by swap).
+  const stage = $('classroom-stage');
+  if (stage) {
+    stage.classList.remove('scene-enter');
+    // Force reflow so the animation reliably restarts between scenes.
+    void stage.offsetWidth;
+    stage.classList.add('scene-enter');
+  }
+
   state.client.completeScene(state.plan.id, scene.id).catch(() => {});
 }
 
 function runCaptions(scene, captions) {
   const box = $('captions');
   const mouth = $('avatar-mouth');
+  const teacherVisual = $('teacher-visual');
   box.textContent = scene.narration;
+
+  // Check if media result has a video URL from an avatar provider
+  const mediaResult = state.lastMediaResult;
+  if (mediaResult && mediaResult.teacherPanel && mediaResult.teacherPanel.type === 'video' && mediaResult.teacherPanel.url) {
+    // Show avatar video
+    teacherVisual.innerHTML = '';
+    const video = document.createElement('video');
+    video.src = mediaResult.teacherPanel.url;
+    video.autoplay = true;
+    video.muted = false;
+    video.loop = false;
+    video.style.width = '100%';
+    video.style.height = '100%';
+    video.style.objectFit = 'cover';
+    video.style.borderRadius = 'var(--radius-sm)';
+    teacherVisual.appendChild(video);
+    mouth.classList.add('speaking');
+  } else {
+    mouth.classList.add('speaking');
+  }
 
   if (state.voiceOn) {
     state.media.tts.speak(scene.narration, state.plan.learner.language, {
@@ -314,8 +399,9 @@ function runCaptions(scene, captions) {
   }
 
   const duration = scene.durationSeconds || 20;
-  mouth.classList.add('speaking');
 
+  // Karaoke mode: for the active caption, highlight words as they are spoken.
+  let karaokeWords = null;
   state.timer = setInterval(() => {
     state.elapsed += 0.25;
     $('scene-clock').textContent = `${Math.min(Math.ceil(state.elapsed), duration)}s / ${duration}s`;
@@ -324,7 +410,19 @@ function runCaptions(scene, captions) {
       const active = captions.find(
         (caption) => state.elapsed >= caption.startTime && state.elapsed < caption.endTime
       );
-      if (active) box.textContent = active.text;
+      if (active) {
+        const token = captionToWords(active.text);
+        if (token !== karaokeWords) {
+          karaokeWords = token;
+          renderKaraoke(box, active.text, 0, token);
+        }
+        if (token) {
+          const wordCount = token.length;
+          const wordDur = (active.endTime - active.startTime) / wordCount || 0.15;
+          const wordIndex = Math.floor((state.elapsed - active.startTime) / wordDur);
+          renderKaraoke(box, active.text, wordIndex, token);
+        }
+      }
     }
 
     if (state.elapsed >= duration) {
@@ -335,11 +433,73 @@ function runCaptions(scene, captions) {
   }, 250);
 }
 
+/** Split narration into word tokens, treating maths like "V = I x R" as one unit. */
+function captionToWords(text) {
+  const match = text.match(/\b[\w’\']+|\b[VvIRr]\s*[=×÷·]\s*[VvIRr]\b|[=×÷·]+|\bΩ\b/gi);
+  return match || [];
+}
+
+/** Render a caption with an index of "spoken so far" words highlighted. */
+function renderKaraoke(box, text, spokenUpTo, tokens) {
+  if (tokens && tokens.length && tokens.length < 120) {
+    let seen = 0;
+    const node = document.createElement('div');
+    node.className = 'caption-karaoke';
+    text.replace(/\b[\w’\']+|\b[VvIRr]\s*[=×÷·]\s*[VvIRr]\b|[=×÷·]+|\bΩ\b/gi, (tok) => {
+      const span = document.createElement('span');
+      span.className = seen < spokenUpTo ? 'is-spoken' : '';
+      span.textContent = tok;
+      seen += 1;
+      node.appendChild(span);
+      node.appendChild(document.createTextNode(' '));
+      return tok;
+    });
+    box.textContent = '';
+    box.appendChild(node);
+  } else {
+    box.textContent = text;
+  }
+}
+
 function updateProgress() {
   const total = state.scenes.length;
   const done = state.sceneIndex + 1;
   $('progress-fill').style.width = `${(done / total) * 100}%`;
   $('progress-label').textContent = `Scene ${done} / ${total}`;
+}
+
+/** Render the interactive lesson-path rail and keep it in sync with the current scene. */
+function renderClasspath() {
+  const list = $('classpath-list');
+  const counter = $('classpath-progress');
+  if (!list) return;
+  list.textContent = '';
+  const total = state.scenes.length;
+  const done = state.sceneIndex + 1;
+  if (counter) counter.textContent = `${done} / ${total}`;
+
+  state.scenes.forEach((scene, index) => {
+    const item = document.createElement('li');
+    item.className = 'classpath-item';
+    item.dataset.scene = String(index);
+    if (scene.checkpointId) item.classList.add('checkpoint');
+    if (index === state.sceneIndex) item.classList.add('active');
+    else if (index < state.sceneIndex) item.classList.add('done');
+
+    const node = document.createElement('span');
+    node.className = 'classpath-node';
+    node.textContent = scene.checkpointId ? '?' : String(index + 1);
+
+    const label = document.createElement('span');
+    label.className = 'classpath-label';
+    label.textContent = scene.checkpointId ? 'Checkpoint question' : (scene.objective || scene.conceptId || `Scene ${index + 1}`);
+
+    item.append(node, label);
+    item.addEventListener('click', () => {
+      if (index <= state.sceneIndex) goToScene(index);
+    });
+    list.appendChild(item);
+  });
 }
 
 function prepareCheckpoint(scene) {
@@ -409,6 +569,7 @@ function showEvaluation(result) {
     icon.className = 'feedback-icon is-good';
     title.textContent = 'Correct';
     action.textContent = 'Continue the lesson';
+    celebrate();
     // Step over any repair scene spliced in earlier, otherwise "continue"
     // would drop the learner back into the re-teach they have just passed.
     action.onclick = () => goToScene(firstTeachingSceneAfter(state.sceneIndex));
@@ -439,6 +600,34 @@ function showEvaluation(result) {
 
   action.textContent = 'Show me the correct idea';
   action.onclick = () => insertRepairScene(result.repairScene);
+}
+
+/** Fire a lightweight DOM confetti celebration (no dependencies). */
+function celebrate() {
+  const panel = $('feedback-panel');
+  if (!panel || document.getElementById('confetti-layer')) return;
+  const layer = document.createElement('div');
+  layer.id = 'confetti-layer';
+  layer.className = 'confetti-layer';
+  panel.style.position = 'relative';
+  panel.appendChild(layer);
+  const colors = ['#3ecf8e', '#6c8cff', '#f5a524', '#ff6b9d', '#f8e16c'];
+  for (let i = 0; i < 40; i += 1) {
+    const piece = document.createElement('span');
+    piece.className = 'confetti-piece';
+    const size = 6 + Math.random() * 8;
+    piece.style.width = `${size}px`;
+    piece.style.height = `${size * (Math.random() > 0.5 ? 0.6 : 1.4)}px`;
+    piece.style.left = `${Math.random() * 100}%`;
+    piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+    piece.style.setProperty('--drift', `${(Math.random() * 260 - 130).toFixed(0)}px`);
+    piece.style.setProperty('--fall-duration', `${(1.4 + Math.random() * 1.4).toFixed(2)}s`);
+    layer.appendChild(piece);
+  }
+  setTimeout(() => {
+    const existing = document.getElementById('confetti-layer');
+    if (existing) existing.remove();
+  }, 3600);
 }
 
 /**
@@ -561,11 +750,24 @@ function openEvidence() {
  * Report
  * ------------------------------------------------------------------ */
 
+/** Put a visible spinner into a container in place of plain loading text. */
+function showLoading(container, message) {
+  container.textContent = '';
+  const shim = document.createElement('div');
+  shim.className = 'loading-shim';
+  const spinner = document.createElement('div');
+  spinner.className = 'spinner';
+  const label = document.createElement('span');
+  label.textContent = message || 'Loading...';
+  shim.append(spinner, label);
+  container.appendChild(shim);
+}
+
 async function showReport() {
   stopTimer();
   showScreen('report');
   const body = $('report-body');
-  body.textContent = 'Building your report...';
+  showLoading(body, 'Building your report...');
 
   try {
     const report = await state.client.getReport(state.plan.id);
@@ -630,8 +832,192 @@ async function showReport() {
       next.append(label, title);
       body.appendChild(next);
     }
+
+    $('profile-btn').hidden = false;
   } catch (err) {
     body.textContent = `Could not load the report: ${err.message}`;
+    $('profile-btn').hidden = true;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Learning profile dashboard
+ * ------------------------------------------------------------------ */
+
+function profileChip(label, value, cls) {
+  const chip = document.createElement('div');
+  chip.className = `profile-stat ${cls || ''}`;
+  const l = document.createElement('span');
+  l.className = 'profile-stat-label';
+  l.textContent = label;
+  const v = document.createElement('span');
+  v.className = 'profile-stat-value';
+  v.textContent = value != null ? value : '—';
+  chip.append(l, v);
+  return chip;
+}
+
+function profileTrendBar(label, value) {
+  const row = document.createElement('div');
+  row.className = 'trend-row';
+  const name = document.createElement('span');
+  name.className = 'trend-label';
+  name.textContent = label;
+  const track = document.createElement('div');
+  track.className = 'trend-track';
+  const fill = document.createElement('div');
+  fill.className = 'trend-fill';
+  const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
+  fill.style.width = `${pct}%`;
+  fill.textContent = pct < 40 ? `revisit` : pct < 70 ? 'steady' : 'mastered';
+  track.appendChild(fill);
+  row.append(name, track);
+  return row;
+}
+
+function profileList(mastery) {
+  const wrap = document.createElement('div');
+  wrap.className = 'trend-wrap';
+  const entries = Object.entries(mastery || {}).sort((a, b) => a[1] - b[1]);
+  if (!entries.length) {
+    const none = document.createElement('p');
+    none.className = 'hint';
+    none.textContent = 'No mastery data yet. Complete a lesson to start tracking.';
+    wrap.appendChild(none);
+    return wrap;
+  }
+  entries.forEach(([concept, value]) => wrap.appendChild(profileTrendBar(concept, value)));
+  return wrap;
+}
+
+function profileFlashcards(cards) {
+  const wrap = document.createElement('div');
+  wrap.className = 'flashcard-list';
+  const list = (cards || []).slice(0, 6);
+  if (!list.length) {
+    const none = document.createElement('p');
+    none.className = 'hint';
+    none.textContent = 'No review cards yet.';
+    wrap.appendChild(none);
+    return wrap;
+  }
+  list.forEach((card) => {
+    const item = document.createElement('details');
+    item.className = 'flashcard';
+    const summary = document.createElement('summary');
+    summary.textContent = card.front;
+    const back = document.createElement('p');
+    back.textContent = card.back;
+    item.append(summary, back);
+    wrap.appendChild(item);
+  });
+  return wrap;
+}
+
+function elem(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text != null) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+
+function profileSection(title, child) {
+  const section = document.createElement('div');
+  section.className = 'report-section';
+  section.appendChild(elem('h4', title));
+  section.appendChild(child);
+  return section;
+}
+
+async function showProfile() {
+  stopTimer();
+  showScreen('profile');
+  const body = $('profile-body');
+  showLoading(body, 'Loading your learning profile...');
+
+  const studentId = (state.plan && state.plan.learner && state.plan.learner.studentId) || 'student-demo';
+
+  try {
+    const profile = await state.client.getProfile(studentId);
+    if (!profile) {
+      body.textContent = 'No long-term profile for this student yet. Take a lesson to start tracking.';
+      return;
+    }
+    body.textContent = '';
+
+    // Header stats
+    const statsRow = document.createElement('div');
+    statsRow.className = 'stats-row';
+    const score = profile.avgScore != null ? `${Math.round(profile.avgScore * 100)}%` : '—';
+    statsRow.append(
+      profileChip('Lessons completed', profile.lessonsCompleted ?? (profile.lessons || []).length, 'is-strong'),
+      profileChip('Average score', score, 'is-strong'),
+      profileChip('Recurring misconceptions', (profile.recurringMisconceptions || []).length, 'is-weak'),
+    );
+    body.appendChild(statsRow);
+
+    // Concept mastery trend
+    if (profile.conceptMastery) {
+      body.appendChild(profileSection('Concept mastery', profileList(profile.conceptMastery)));
+    }
+
+    // Weak concepts
+    const weak = profile.weakConcepts || [];
+    const strong = (profile.strongConcepts || []).filter((c) => !weak.includes(c));
+    body.appendChild(profileSection('Needs revision', chipSection('', weak, 'is-weak')));
+    body.appendChild(profileSection('Strong concepts', chipSection('', strong, 'is-strong')));
+
+    // Recurring misconceptions
+    if ((profile.recurringMisconceptions || []).length) {
+      const list = document.createElement('ul');
+      list.className = 'action-list';
+      profile.recurringMisconceptions.forEach((id) => {
+        list.appendChild(elem('li', id));
+      });
+      body.appendChild(profileSection('Patterns to watch', list));
+    }
+
+    // Review flashcards for weak concepts
+    const flashTargets = weak.length ? weak : (profile.weakConcepts || []);
+    const flash = await state.client.getFlashcards(state.plan ? state.plan.id : profile.lessonId, flashTargets);
+    body.appendChild(profileSection('Review flashcards', profileFlashcards(flash.cards)));
+
+    // Spaced, multi-day revision plan built from long-term memory.
+    const study = await state.client.getStudyPlan(studentId);
+    if (study) {
+      const wrap = document.createElement('div');
+      wrap.className = 'study-timeline';
+      const total = elem('p', `Spaced revision: ${study.totalReviewMinutes} min across ${study.horizonDays} days`, 'hint');
+      wrap.appendChild(total);
+      (study.sessions || []).forEach((s) => {
+        const day = document.createElement('div');
+        day.className = 'study-day';
+        const head = document.createElement('div');
+        head.className = 'study-day-head';
+        head.appendChild(elem('strong', `Day ${s.day}`));
+        head.appendChild(elem('span', s.date, 'study-day-date'));
+        const para = document.createElement('div');
+        para.className = 'study-day-body';
+        para.appendChild(elem('div', s.title));
+        para.appendChild(elem('span', `${s.conceptIds.length} topics - ${s.sessionMinutes} min`, 'hint'));
+        day.append(head, para);
+        wrap.appendChild(day);
+      });
+      body.appendChild(profileSection('7-day revision plan', wrap));
+    }
+
+    // Lesson history
+    if ((profile.lessons || []).length) {
+      const list = document.createElement('ul');
+      list.className = 'action-list';
+      profile.lessons.slice(0, 8).reverse().forEach((lesson) => {
+        const pct = Math.round((lesson.score || 0) * 100);
+        list.appendChild(elem('li', `${lesson.topic} - ${pct}%${lesson.weekName ? ` (${lesson.weekName})` : ''}`));
+      });
+      body.appendChild(profileSection('Lesson history', list));
+    }
+  } catch (err) {
+    body.textContent = `Could not load the profile: ${err.message}`;
   }
 }
 
@@ -673,21 +1059,146 @@ function restart() {
   state.scenes = [];
   state.sceneIndex = 0;
   state.checkpointIndex = null;
-  showScreen('onboarding');
+  showScreen('landing');
   state.client.detectMode().then(setModeBadge);
+}
+
+function goHome() {
+  showScreen('landing');
+  state.client.detectMode().then(setModeBadge);
+}
+
+function goOnboarding() {
+  syncControlUI();
+  showScreen('onboarding');
+}
+
+/** Push the current control values into every mirrored input so the visible
+ *  segmented/slider UI always matches the hidden selects the logic reads. */
+function syncControlUI() {
+  const pairs = [['level', 'level'], ['language', 'language'], ['study-mode', 'study-mode']];
+  pairs.forEach(([segKey]) => {
+    const select = $(segKey);
+    select.value = select.value;
+  });
+  syncRadiosToSelects();
+  syncSliderLabel();
+}
+
+/** Copy checked segmented radio values into the hidden selects. */
+function syncRadiosToSelects() {
+  const map = { level: 'level', language: 'language', 'study-mode': 'study-mode' };
+  Object.entries(map).forEach(([radioName, selectId]) => {
+    const checked = document.querySelector(`input[name="${radioName}"]:checked`);
+    if (checked) $(selectId).value = checked.value;
+  });
+  syncSliderLabel();
+}
+
+/** Reflect the time slider into the hidden minutes select + label. */
+const MINUTE_PRESETS = [5, 10, 20, 60];
+function nearestMinutePreset(value) {
+  let best = 20;
+  let bestDiff = Infinity;
+  MINUTE_PRESETS.forEach((p) => {
+    const diff = Math.abs(p - value);
+    if (diff < bestDiff) { bestDiff = diff; best = p; }
+  });
+  return best;
+}
+function syncSliderLabel() {
+  const slider = $('minutes-slider');
+  const minutesSelect = $('minutes');
+  if (!slider) return;
+  const value = Number(slider.value) || 20;
+  const preset = nearestMinutePreset(value);
+  if (minutesSelect) minutesSelect.value = String(preset);
+  const label = $('minutes-label');
+  if (label) label.textContent = `${value} min`;
 }
 
 function loadDemoPreset() {
   $('topic').value = "Ohm's Law";
   $('material-text').value = '';
-  $('level').value = 'beginner';
-  $('language').value = 'hinglish';
-  $('minutes').value = '20';
+  setRadio('level', 'beginner');
+  setRadio('language', 'hinglish');
+  $('minutes-slider').value = '20';
+  setRadio('study-mode', 'lesson');
   $('goal').value = "Understand Ohm's Law";
+  syncControlUI();
   $('onboarding-form').requestSubmit();
 }
 
+/** Check the segmented radio that matches a value for a given radio group. */
+function setRadio(groupName, value) {
+  const radio = document.querySelector(`input[name="${groupName}"][value="${value}"]`);
+  if (radio) radio.checked = true;
+}
+
 function init() {
+  syncControlUI();
+  showScreen('landing', { instant: true });
+
+  // Landing + navigation.
+  $('landing-start').addEventListener('click', goOnboarding);
+  $('landing-cta-start').addEventListener('click', goOnboarding);
+  $('landing-closing-start').addEventListener('click', goOnboarding);
+  $('landing-cta-how').addEventListener('click', () => {
+    showScreen('landing');
+    const section = $('landing-features');
+    if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  $('home-link').addEventListener('click', goHome);
+  $('home-link').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); }
+  });
+  document.querySelectorAll('[data-nav]').forEach((link) => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const target = link.dataset.nav;
+      if (target === 'landing-features') {
+        showScreen('landing');
+        const section = $('landing-features');
+        if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        showScreen(target, { instant: true });
+      }
+    });
+  });
+
+  // Onboarding control sync.
+  ['level', 'language', 'study-mode'].forEach((name) => {
+    const inputs = document.querySelectorAll(`input[name="${name}"]`);
+    inputs.forEach((input) => input.addEventListener('change', syncRadiosToSelects));
+  });
+  const slider = $('minutes-slider');
+  if (slider) slider.addEventListener('input', syncSliderLabel);
+
+  // Drag-and-drop upload.
+  const dropzone = $('dropzone');
+  const fileInput = $('material-file');
+  if (dropzone && fileInput) {
+    ['dragenter', 'dragover'].forEach((evt) =>
+      dropzone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+      }));
+    ['dragleave', 'drop'].forEach((evt) =>
+      dropzone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+      }));
+    dropzone.addEventListener('drop', (e) => {
+      if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        fileInput.files = e.dataTransfer.files;
+        showDroppedFile(e.dataTransfer.files[0]);
+      }
+    });
+    fileInput.addEventListener('change', () => {
+      showDroppedFile(fileInput.files && fileInput.files[0]);
+    });
+  }
+
   $('onboarding-form').addEventListener('submit', handleOnboarding);
   $('start-lesson').addEventListener('click', () => {
     showScreen('classroom');
@@ -722,6 +1233,8 @@ function init() {
   $('demo-btn').addEventListener('click', loadDemoPreset);
   $('restart-btn').addEventListener('click', restart);
   $('report-restart').addEventListener('click', restart);
+  $('profile-btn').addEventListener('click', showProfile);
+  $('profile-back').addEventListener('click', () => showScreen('report'));
 
   state.client.detectMode().then(setModeBadge);
 }

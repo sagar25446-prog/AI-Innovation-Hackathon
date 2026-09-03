@@ -14,6 +14,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 Level = Literal["beginner", "intermediate", "advanced"]
 Language = Literal["english", "hindi", "hinglish"]
+Personality = Literal["patient", "socratic", "coach"]
+StudyMode = Literal["lesson", "exam", "revision"]
 VisualType = Literal[
     "circuit", "equation", "graph", "timeline", "diagram", "code_trace", "concept_map"
 ]
@@ -26,6 +28,7 @@ class LearnerProfile(BaseModel):
     availableMinutes: int = Field(ge=1, le=10080)
     goal: str = Field(min_length=1)
     priorKnowledge: str | None = None
+    personality: Personality | None = None
 
 
 class SourceCitation(BaseModel):
@@ -90,6 +93,7 @@ class PlanRequest(BaseModel):
     materialId: str | None = None
     topic: str = "Ohm's Law"
     studentId: str = "student-demo"
+    studyMode: StudyMode = "lesson"
 
 
 class AnswerRequest(BaseModel):

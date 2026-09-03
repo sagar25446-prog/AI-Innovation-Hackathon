@@ -157,6 +157,40 @@ function renderCircuit(data) {
   return svg;
 }
 
+function renderMathExpr(container, expression) {
+  // Render fraction forms like "V / R" or "V/R" as a proper stacked fraction,
+  // keeping leading assignments (e.g. "I =") inline.
+  const assign = expression.match(/^([A-Za-z=·×÷I ✕×]+?)\s*=\s*/);
+  if (assign) {
+    const prefix = document.createElement('span');
+    prefix.textContent = assign[1].trim() + ' = ';
+    container.appendChild(prefix);
+    expression = expression.slice(assign[0].length);
+  }
+  const frac = expression.match(/^([^/×X*÷(]+?)\s*\/\s*([^/×X*÷)]+)(.*)$/);
+  if (frac) {
+    const fraction = document.createElement('span');
+    fraction.className = 'math-frac';
+    const num = document.createElement('span');
+    num.className = 'frac-num';
+    num.textContent = frac[1].trim();
+    const den = document.createElement('span');
+    den.className = 'frac-den';
+    den.textContent = frac[2].trim();
+    fraction.append(num, den);
+    container.appendChild(fraction);
+    if (frac[3]) {
+      const rest = document.createElement('span');
+      rest.textContent = frac[3];
+      container.appendChild(rest);
+    }
+    return;
+  }
+  const plain = document.createElement('span');
+  plain.textContent = expression;
+  container.appendChild(plain);
+}
+
 function renderEquation(data) {
   const wrap = document.createElement('div');
   wrap.className = 'eq-stack';
@@ -170,7 +204,7 @@ function renderEquation(data) {
     }
     const expr = document.createElement('span');
     expr.className = 'eq-expr';
-    expr.textContent = step.expression;
+    renderMathExpr(expr, step.expression);
     row.appendChild(expr);
     if (step.label) {
       const label = document.createElement('span');

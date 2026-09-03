@@ -15,6 +15,32 @@ from services.ingestion import ingest_text, ingest_topic  # noqa: E402
 from services.planner import plan_lesson, select_tier  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def deterministic_engine(monkeypatch):
+    """Force the deterministic planner for these unit tests.
+
+    These tests assert the deterministic engine's exact structure (concept ids,
+    narrations, visuals, substeps). With a live GEMINI_API_KEY set, plan_lesson
+    would take the LLM path and the structural assertions would become flaky.
+    We suppress the key and reset the cached Gemini client so every call here
+    exercises the deterministic path deterministically.
+    """
+    import services.llm as llm
+
+    saved_client = llm._gemini_client
+    saved_attempted = llm._model_attempted
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GURUFLOW_LLM_API_KEY", raising=False)
+    llm._gemini_client = None
+    llm._model_attempted = False
+    try:
+        yield
+    finally:
+        llm._gemini_client = saved_client
+        llm._model_attempted = saved_attempted
+
+
 def learner(**overrides):
     profile = {
         "level": "beginner",
@@ -118,13 +144,20 @@ def test_checkpoint_scene_is_marked(material):
 
 
 def test_unknown_topic_is_flagged_not_fabricated():
-    """An off-syllabus topic must admit it is ungrounded, not invent citations."""
+    """An off-syllabus topic must admit it is ungrounded, not invent citations
+    — and, crucially, not silently teach a different subject (Electricity)."""
     material = ingest_topic("Mughal architecture")
     plan = plan_lesson(learner(), material, topic="Mughal architecture")
 
+    # We never teach a subject the learner did not ask for.
+    assert plan["unsupportedTopic"] is True
+    assert plan["tier"] == "unsupported-topic"
+    assert all(scene.get("unsupportedTopic") for scene in plan["scenes"])
     for scene in plan["scenes"]:
+        assert scene["conceptId"] == "unsupported-topic"
         assert scene["citations"] == []
         assert scene["groundingStatus"] == "general_knowledge"
+    assert all("Electric Current" not in s["narration"] for s in plan["scenes"])
 
 
 def test_uploaded_text_produces_page_numbered_citations():
