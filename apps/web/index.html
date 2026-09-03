@@ -9,94 +9,274 @@
 <body>
 
 <header class="topbar">
-  <div class="brand">
+  <div class="brand brand-click" id="home-link" role="button" tabindex="0" title="Go to home">
     <span class="brand-mark">GF</span>
     <div>
       <h1>GuruFlow</h1>
       <p class="brand-sub">Source-grounded AI teacher</p>
     </div>
   </div>
+
+  <nav class="nav-links" aria-label="Primary">
+    <a href="#" data-nav="landing" class="nav-link">Home</a>
+    <a href="#" data-nav="onboarding" class="nav-link">Start learning</a>
+    <a href="#" data-nav="landing-features" class="nav-link">How it works</a>
+    <a href="#" data-nav="landing" class="nav-link">Why GuruFlow</a>
+  </nav>
+
   <div class="topbar-actions">
     <span id="mode-badge" class="badge badge-muted" title="Where lesson data is coming from">connecting...</span>
-    <button id="demo-btn" class="btn btn-ghost" type="button">Demo mode</button>
+    <button id="demo-btn" class="btn btn-ghost" type="button" hidden>Demo</button>
     <button id="restart-btn" class="btn btn-ghost" type="button" hidden>Restart</button>
+    <button id="landing-start" class="btn btn-primary btn-sm" type="button">Start learning</button>
   </div>
 </header>
 
 <main id="app">
 
+  <!-- 0. LANDING --------------------------------------------------------- -->
+  <section id="screen-landing" class="screen">
+    <div class="landing-hero grid-landing">
+      <div class="landing-copy">
+        <p class="eyebrow">SOURCE-GROUNDED · MULTILINGUAL · ADAPTIVE</p>
+        <h1 class="landing-title">
+          An AI teacher that
+          <span class="accent-word">explains</span>,
+          <span class="accent-word">checks</span> and
+          <span class="accent-word">re-teaches</span> what you missed.
+        </h1>
+        <p class="landing-lede">
+          GuruFlow reads your textbook or PDF, plans a timed lesson, teaches it with a
+          talking visual, asks what you understood — and when you get a concept wrong,
+          it diagnoses the misconception and teaches it a different way.
+        </p>
+        <div class="landing-cta">
+          <button id="landing-cta-start" class="btn btn-primary btn-lg" type="button">Start learning free</button>
+          <button id="landing-cta-how" class="btn btn-ghost btn-lg" type="button">See how it works</button>
+        </div>
+        <p class="disclaimer">Runs 100% offline. No account needed. Teach from the built-in electricity chapter or your own upload.</p>
+      </div>
+
+      <div class="landing-visual" aria-hidden="true">
+        <div class="lobby-card lobby-teacher">
+          <div class="mini-avatar">
+            <svg viewBox="0 0 260 320" class="avatar-scene">
+              <defs>
+                <radialGradient id="laAura" cx="50%" cy="38%" r="75%">
+                  <stop offset="0%" stop-color="rgba(108,140,255,0.30)"/>
+                  <stop offset="100%" stop-color="rgba(108,140,255,0)"/>
+                </radialGradient>
+                <linearGradient id="laSkin" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#efbd8e"/>
+                  <stop offset="100%" stop-color="#c98f68"/>
+                </linearGradient>
+                <linearGradient id="laCoat" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#7c63e0"/>
+                  <stop offset="100%" stop-color="#54409e"/>
+                </linearGradient>
+              </defs>
+              <rect x="0" y="0" width="260" height="320" rx="26" fill="url(#laAura)"/>
+              <path d="M55 320 Q65 240 130 240 Q195 240 205 320 Z" fill="url(#laCoat)"/>
+              <rect x="112" y="188" width="36" height="54" rx="10" fill="#c98f68"/>
+              <ellipse cx="130" cy="128" rx="54" ry="60" fill="url(#laSkin)"/>
+              <ellipse cx="80" cy="138" rx="9" ry="13" fill="#c98f68"/>
+              <ellipse cx="180" cy="138" rx="9" ry="13" fill="#c98f68"/>
+              <path d="M72 124 Q74 66 130 66 Q186 66 188 124 L188 96 Q140 60 92 92 Z" fill="#2b2f3d"/>
+              <path d="M74 92 Q90 66 130 66 Q170 66 186 92 Q130 78 74 92 Z" fill="#20242f"/>
+              <path d="M96 102 Q108 96 118 100" stroke="#7a5236" stroke-width="3" fill="none" stroke-linecap="round"/>
+              <path d="M142 100 Q152 96 164 102" stroke="#7a5236" stroke-width="3" fill="none" stroke-linecap="round"/>
+              <g class="avatar-eyes">
+                <ellipse cx="107" cy="120" rx="8" ry="9" fill="#fff"/>
+                <circle cx="107.5" cy="121" r="4.2" fill="#23272f"/>
+                <ellipse cx="153" cy="120" rx="8" ry="9" fill="#fff"/>
+                <circle cx="153.5" cy="121" r="4.2" fill="#23272f"/>
+              </g>
+              <path d="M128 124 Q124 140 129 142" stroke="#b97c55" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+              <g class="avatar-mouth" id="lobby-avatar-mouth">
+                <path d="M114 152 Q130 160 146 152 Q130 161 114 152 Z" fill="#7a3c33"/>
+              </g>
+            </svg>
+          </div>
+          <div class="lobby-chat">
+            <div class="lobby-bubble">Lagbhag sahi! Remember, when voltage is fixed, I = V ÷ R.</div>
+            <div class="lobby-bubble lobby-bubble-reply">Ohh, so current goes DOWN when resistance goes UP?</div>
+            <div class="lobby-bubble">Exactly. Now let me show you why with a graph.</div>
+            <div class="lobby-ticker">✅ Real source citations &nbsp;·&nbsp; 🧠 Misconception repair &nbsp;·&nbsp; 🌐 English / हिंदी / Hinglish</div>
+          </div>
+        </div>
+
+        <div class="lobby-metrics">
+          <div class="metric-chip">Lesson plan · 6 scenes</div>
+          <div class="metric-chip">Mastery +20%</div>
+          <div class="metric-chip">Concept: Ohm's Law</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- How it works -->
+    <div class="landing-section" id="landing-features">
+      <p class="eyebrow center">The loop</p>
+      <h2 class="landing-section-title">Understand → Plan → Teach → Check → Adapt</h2>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <div class="feature-icon">📄</div>
+          <h3>From your own material</h3>
+          <p>Upload a PDF, DOCX, PPTX or paste notes. GuruFlow extracts page-numbered sections and cites real sources — it never invents a citation.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🗺️</div>
+          <h3>A timed lesson plan</h3>
+          <p>Tell it how much time you have (5, 10, 20 or 60 minutes) and choose a study mode — Lesson, Exam prep, or Quick revision.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🎙️</div>
+          <h3>A talking visual teacher</h3>
+          <p>An animated teacher with karaoke captions narrates each scene over a live circuit or graph. Switch language mid-lesson, tap voice on.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔍</div>
+          <h3>Checks understanding</h3>
+          <p>Answer a question in any language. Get it wrong and GuruFlow diagnoses the exact misconception and re-teaches it differently.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📊</div>
+          <h3>Remembers you</h3>
+          <p>Long-term learning profile, review flashcards, a 7-day spaced-revision plan and a final report with strong and weak concepts.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🧑‍🏫</div>
+          <h3>Your choice of teacher style</h3>
+          <p>Pick a patient, socratic or coach personality. The content stays the same — the tone adapts to how you like to be taught.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="landing-closing">
+      <h2>Ready to learn it properly?</h2>
+      <p>Start with the built-in Ohm's Law chapter, or bring your own material.</p>
+      <button id="landing-closing-start" class="btn btn-primary btn-lg" type="button">Build my lesson</button>
+    </div>
+  </section>
+
   <!-- 1. ONBOARDING ------------------------------------------------------ -->
-  <section id="screen-onboarding" class="screen">
-    <div class="hero">
-      <h2>Teach me something, from my own material.</h2>
+  <section id="screen-onboarding" class="screen" hidden>
+    <div class="import-hero">
+      <h2>Set up your lesson</h2>
       <p class="lede">
-        GuruFlow reads your source, plans a timed lesson, teaches it with visuals,
-        checks whether you actually understood, and re-teaches what you missed.
+        Choose a topic or bring your own material. GuruFlow reads your source, plans a timed
+        lesson, and adapts it to exactly who you are.
       </p>
     </div>
 
-    <form id="onboarding-form" class="card form-card">
-      <div class="field">
-        <label for="topic">Topic</label>
-        <input id="topic" name="topic" type="text" value="Ohm's Law" autocomplete="off" />
-        <p class="hint">Class 9 Electricity ships built in. Any other topic is still taught, but clearly marked as ungrounded.</p>
-      </div>
+    <form id="onboarding-form" class="onboarding-layout">
+      <div class="config-panel">
+        <div class="config-block">
+          <h3 class="config-block-title">About you</h3>
 
-      <div class="field">
-        <label for="material-text">Or paste your material <span class="optional">(optional)</span></label>
-        <textarea id="material-text" name="material-text" rows="4"
-          placeholder="Paste notes or a chapter. A blank line separates pages."></textarea>
-      </div>
+          <div class="field">
+            <label for="level">Level</label>
+            <div class="segmented" id="level-seg">
+              <input type="radio" id="level-beginner" name="level" value="beginner" checked hidden />
+              <label for="level-beginner" data-choice="level">Beginner</label>
+              <input type="radio" id="level-intermediate" name="level" value="intermediate" hidden />
+              <label for="level-intermediate" data-choice="level">Intermediate</label>
+              <input type="radio" id="level-advanced" name="level" value="advanced" hidden />
+              <label for="level-advanced" data-choice="level">Advanced</label>
+            </div>
+            <select id="level" name="_level" hidden aria-hidden="true">
+              <option value="beginner" selected>Beginner</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+            </select>
+          </div>
 
-      <div class="field">
-        <label for="material-file">Or upload a PDF <span class="optional">(optional)</span></label>
-        <input id="material-file" name="material-file" type="file" accept=".pdf,.txt,.md" />
-        <p class="hint">Upload a textbook chapter or notes. PDF parsing extracts page-numbered sections automatically.</p>
-      </div>
+          <div class="field">
+            <label for="language">Language</label>
+            <div class="segmented" id="lang-seg">
+              <input type="radio" id="lang-hinglish" name="language" value="hinglish" checked hidden />
+              <label for="lang-hinglish" data-choice="language">Hinglish</label>
+              <input type="radio" id="lang-english" name="language" value="english" hidden />
+              <label for="lang-english" data-choice="language">English</label>
+              <input type="radio" id="lang-hindi" name="language" value="hindi" hidden />
+              <label for="lang-hindi" data-choice="language">हिंदी</label>
+            </div>
+            <select id="language" name="_language" hidden aria-hidden="true">
+              <option value="hinglish" selected>Hinglish</option>
+              <option value="english">English</option>
+              <option value="hindi">Hindi</option>
+            </select>
+          </div>
 
-      <div class="field-row">
-        <div class="field">
-          <label for="level">Level</label>
-          <select id="level" name="level">
-            <option value="beginner" selected>Beginner</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="advanced">Advanced</option>
-          </select>
+          <div class="field">
+            <label for="minutes">Time I have <span id="minutes-label" class="minutes-label">20 min</span></label>
+            <input id="minutes-slider" type="range" min="5" max="60" step="5" value="20" />
+            <div class="minutes-scale"><span>5</span><span>10</span><span>20</span><span>60</span></div>
+            <select id="minutes" name="_minutes" hidden aria-hidden="true">
+              <option value="5">5 minutes</option>
+              <option value="10">10 minutes</option>
+              <option value="20" selected>20 minutes</option>
+              <option value="60">60 minutes</option>
+            </select>
+            <p class="hint">GuruFlow fits the lesson to your budget — never overruns it.</p>
+          </div>
+
+          <div class="field">
+            <label for="study-mode">Study mode</label>
+            <div class="segmented seg-md" id="mode-seg">
+              <input type="radio" id="mode-lesson" name="study-mode" value="lesson" checked hidden />
+              <label for="mode-lesson" data-choice="study-mode">Lesson</label>
+              <input type="radio" id="mode-exam" name="study-mode" value="exam" hidden />
+              <label for="mode-exam" data-choice="study-mode">Exam prep</label>
+              <input type="radio" id="mode-revision" name="study-mode" value="revision" hidden />
+              <label for="mode-revision" data-choice="study-mode">Revision</label>
+            </div>
+            <select id="study-mode" name="_study-mode" hidden aria-hidden="true">
+              <option value="lesson" selected>lesson</option>
+              <option value="exam">exam</option>
+              <option value="revision">revision</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="goal">My goal</label>
+            <input id="goal" name="goal" type="text" value="Understand Ohm's Law" />
+          </div>
         </div>
-        <div class="field">
-          <label for="language">Language</label>
-          <select id="language" name="language">
-            <option value="hinglish" selected>Hinglish</option>
-            <option value="english">English</option>
-            <option value="hindi">Hindi</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="minutes">Time I have</label>
-          <select id="minutes" name="minutes">
-            <option value="5">5 minutes</option>
-            <option value="10">10 minutes</option>
-            <option value="20" selected>20 minutes</option>
-            <option value="60">60 minutes</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="study-mode">Study mode</label>
-          <select id="study-mode" name="study-mode">
-            <option value="lesson" selected>Lesson</option>
-            <option value="exam">Exam prep (drill)</option>
-            <option value="revision">Quick revision</option>
-          </select>
-        </div>
       </div>
 
-      <div class="field">
-        <label for="goal">My goal</label>
-        <input id="goal" name="goal" type="text" value="Understand Ohm's Law" />
-      </div>
+      <div class="material-panel">
+        <div class="config-block">
+          <h3 class="config-block-title">Your material</h3>
 
-      <button type="submit" class="btn btn-primary btn-lg">Analyse source &amp; plan my lesson</button>
-      <p id="onboarding-error" class="error" hidden></p>
+          <div class="field">
+            <label for="topic">What do you want to learn?</label>
+            <input id="topic" name="topic" type="text" value="Ohm's Law" autocomplete="off" />
+            <p class="hint">Class 9 Electricity ships built in. Any other topic is taught if you upload/paste material for it.</p>
+          </div>
+
+          <div class="field">
+            <label for="material-file">Bring your own material <span class="optional">(optional)</span></label>
+            <label class="dropzone" id="dropzone" for="material-file">
+              <input id="material-file" name="material-file" type="file" accept=".pdf,.docx,.pptx,.txt,.md" hidden />
+              <div class="dropzone-inner">
+                <span class="dropzone-icon">⬆</span>
+                <strong>Drag &amp; drop a file here</strong>
+                <span class="dropzone-sub">or click to browse · PDF, DOCX, PPTX, TXT, MD</span>
+              </div>
+            </label>
+            <p id="dropzone-note" class="hint" hidden></p>
+          </div>
+
+          <div class="field">
+            <label for="material-text">Or paste your material <span class="optional">(optional)</span></label>
+            <textarea id="material-text" name="material-text" rows="4"
+              placeholder="Paste notes or a chapter. A blank line separates pages."></textarea>
+          </div>
+        </div>
+
+        <button type="submit" id="onboarding-next-btn" class="btn btn-primary btn-lg btn-block">Analyse source &amp; plan my lesson</button>
+        <p id="onboarding-error" class="error" hidden></p>
+      </div>
     </form>
   </section>
 
@@ -134,6 +314,17 @@
         <button id="evidence-btn" class="btn btn-ghost btn-sm" type="button">Evidence</button>
       </div>
     </div>
+
+    <div class="classroom-layout">
+      <aside class="classpath" aria-label="Lesson path">
+        <div class="classpath-head">
+          <span>Learning path</span>
+          <span id="classpath-progress" class="classpath-progress"></span>
+        </div>
+        <ol id="classpath-list" class="classpath-list"></ol>
+      </aside>
+
+      <div class="classroom-main">
 
     <div class="stage" id="classroom-stage">
       <div class="teacher-panel">
@@ -218,6 +409,9 @@
         <div id="visual-canvas" class="visual-canvas"></div>
       </div>
     </div>
+
+      </div><!-- /classroom-main -->
+    </div><!-- /classroom-layout -->
 
     <div class="captions" id="captions" aria-live="polite"></div>
 

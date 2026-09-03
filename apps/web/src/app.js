@@ -51,12 +51,18 @@ const MISCONCEPTION_EXPLAIN = {
  * Screen handling
  * ------------------------------------------------------------------ */
 
-function showScreen(name) {
-  ['onboarding', 'plan', 'classroom', 'report', 'profile'].forEach((screen) => {
+const SCREENS = ['landing', 'onboarding', 'plan', 'classroom', 'report', 'profile'];
+
+function showScreen(name, opts = {}) {
+  SCREENS.forEach((screen) => {
     $(`screen-${screen}`).hidden = screen !== name;
   });
-  $('restart-btn').hidden = name === 'onboarding';
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  $('restart-btn').hidden = name === 'onboarding' || name === 'landing';
+  document.querySelectorAll('.nav-link').forEach((link) => {
+    link.classList.toggle('active', link.dataset.nav === name);
+  });
+  const smooth = opts.instant ? 'auto' : 'smooth';
+  window.scrollTo({ top: 0, behavior: smooth });
 }
 
 function setModeBadge() {
@@ -83,12 +89,24 @@ function setModeBadge() {
  * ------------------------------------------------------------------ */
 
 function readLearner() {
+  const sliderEl = $('minutes-slider');
+  const minutes = sliderEl ? Number(sliderEl.value) : Number($('minutes').value);
   return {
     level: $('level').value,
     language: $('language').value,
-    availableMinutes: Number($('minutes').value),
+    availableMinutes: minutes > 0 ? minutes : 20,
     goal: $('goal').value.trim() || 'Understand the topic',
   };
+}
+
+function showDroppedFile(file) {
+  const note = $('dropzone-note');
+  if (!file || !note) return;
+  note.hidden = false;
+  const size = file.size > 1048576
+    ? `${(file.size / 1048576).toFixed(1)} MB`
+    : `${Math.round(file.size / 1024)} KB`;
+  note.textContent = `Ready to teach from: ${file.name} (${size})`;
 }
 
 async function handleOnboarding(event) {
@@ -287,6 +305,7 @@ function startScene() {
   stopTimer();
   state.elapsed = 0;
 
+  renderClasspath();
   $('scene-objective').textContent = scene.objective;
 
   const grounded = (scene.citations || []).length > 0;
@@ -447,6 +466,40 @@ function updateProgress() {
   const done = state.sceneIndex + 1;
   $('progress-fill').style.width = `${(done / total) * 100}%`;
   $('progress-label').textContent = `Scene ${done} / ${total}`;
+}
+
+/** Render the interactive lesson-path rail and keep it in sync with the current scene. */
+function renderClasspath() {
+  const list = $('classpath-list');
+  const counter = $('classpath-progress');
+  if (!list) return;
+  list.textContent = '';
+  const total = state.scenes.length;
+  const done = state.sceneIndex + 1;
+  if (counter) counter.textContent = `${done} / ${total}`;
+
+  state.scenes.forEach((scene, index) => {
+    const item = document.createElement('li');
+    item.className = 'classpath-item';
+    item.dataset.scene = String(index);
+    if (scene.checkpointId) item.classList.add('checkpoint');
+    if (index === state.sceneIndex) item.classList.add('active');
+    else if (index < state.sceneIndex) item.classList.add('done');
+
+    const node = document.createElement('span');
+    node.className = 'classpath-node';
+    node.textContent = scene.checkpointId ? '?' : String(index + 1);
+
+    const label = document.createElement('span');
+    label.className = 'classpath-label';
+    label.textContent = scene.checkpointId ? 'Checkpoint question' : (scene.objective || scene.conceptId || `Scene ${index + 1}`);
+
+    item.append(node, label);
+    item.addEventListener('click', () => {
+      if (index <= state.sceneIndex) goToScene(index);
+    });
+    list.appendChild(item);
+  });
 }
 
 function prepareCheckpoint(scene) {
@@ -1006,21 +1059,146 @@ function restart() {
   state.scenes = [];
   state.sceneIndex = 0;
   state.checkpointIndex = null;
-  showScreen('onboarding');
+  showScreen('landing');
   state.client.detectMode().then(setModeBadge);
+}
+
+function goHome() {
+  showScreen('landing');
+  state.client.detectMode().then(setModeBadge);
+}
+
+function goOnboarding() {
+  syncControlUI();
+  showScreen('onboarding');
+}
+
+/** Push the current control values into every mirrored input so the visible
+ *  segmented/slider UI always matches the hidden selects the logic reads. */
+function syncControlUI() {
+  const pairs = [['level', 'level'], ['language', 'language'], ['study-mode', 'study-mode']];
+  pairs.forEach(([segKey]) => {
+    const select = $(segKey);
+    select.value = select.value;
+  });
+  syncRadiosToSelects();
+  syncSliderLabel();
+}
+
+/** Copy checked segmented radio values into the hidden selects. */
+function syncRadiosToSelects() {
+  const map = { level: 'level', language: 'language', 'study-mode': 'study-mode' };
+  Object.entries(map).forEach(([radioName, selectId]) => {
+    const checked = document.querySelector(`input[name="${radioName}"]:checked`);
+    if (checked) $(selectId).value = checked.value;
+  });
+  syncSliderLabel();
+}
+
+/** Reflect the time slider into the hidden minutes select + label. */
+const MINUTE_PRESETS = [5, 10, 20, 60];
+function nearestMinutePreset(value) {
+  let best = 20;
+  let bestDiff = Infinity;
+  MINUTE_PRESETS.forEach((p) => {
+    const diff = Math.abs(p - value);
+    if (diff < bestDiff) { bestDiff = diff; best = p; }
+  });
+  return best;
+}
+function syncSliderLabel() {
+  const slider = $('minutes-slider');
+  const minutesSelect = $('minutes');
+  if (!slider) return;
+  const value = Number(slider.value) || 20;
+  const preset = nearestMinutePreset(value);
+  if (minutesSelect) minutesSelect.value = String(preset);
+  const label = $('minutes-label');
+  if (label) label.textContent = `${value} min`;
 }
 
 function loadDemoPreset() {
   $('topic').value = "Ohm's Law";
   $('material-text').value = '';
-  $('level').value = 'beginner';
-  $('language').value = 'hinglish';
-  $('minutes').value = '20';
+  setRadio('level', 'beginner');
+  setRadio('language', 'hinglish');
+  $('minutes-slider').value = '20';
+  setRadio('study-mode', 'lesson');
   $('goal').value = "Understand Ohm's Law";
+  syncControlUI();
   $('onboarding-form').requestSubmit();
 }
 
+/** Check the segmented radio that matches a value for a given radio group. */
+function setRadio(groupName, value) {
+  const radio = document.querySelector(`input[name="${groupName}"][value="${value}"]`);
+  if (radio) radio.checked = true;
+}
+
 function init() {
+  syncControlUI();
+  showScreen('landing', { instant: true });
+
+  // Landing + navigation.
+  $('landing-start').addEventListener('click', goOnboarding);
+  $('landing-cta-start').addEventListener('click', goOnboarding);
+  $('landing-closing-start').addEventListener('click', goOnboarding);
+  $('landing-cta-how').addEventListener('click', () => {
+    showScreen('landing');
+    const section = $('landing-features');
+    if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  $('home-link').addEventListener('click', goHome);
+  $('home-link').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); }
+  });
+  document.querySelectorAll('[data-nav]').forEach((link) => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const target = link.dataset.nav;
+      if (target === 'landing-features') {
+        showScreen('landing');
+        const section = $('landing-features');
+        if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        showScreen(target, { instant: true });
+      }
+    });
+  });
+
+  // Onboarding control sync.
+  ['level', 'language', 'study-mode'].forEach((name) => {
+    const inputs = document.querySelectorAll(`input[name="${name}"]`);
+    inputs.forEach((input) => input.addEventListener('change', syncRadiosToSelects));
+  });
+  const slider = $('minutes-slider');
+  if (slider) slider.addEventListener('input', syncSliderLabel);
+
+  // Drag-and-drop upload.
+  const dropzone = $('dropzone');
+  const fileInput = $('material-file');
+  if (dropzone && fileInput) {
+    ['dragenter', 'dragover'].forEach((evt) =>
+      dropzone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+      }));
+    ['dragleave', 'drop'].forEach((evt) =>
+      dropzone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+      }));
+    dropzone.addEventListener('drop', (e) => {
+      if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        fileInput.files = e.dataTransfer.files;
+        showDroppedFile(e.dataTransfer.files[0]);
+      }
+    });
+    fileInput.addEventListener('change', () => {
+      showDroppedFile(fileInput.files && fileInput.files[0]);
+    });
+  }
+
   $('onboarding-form').addEventListener('submit', handleOnboarding);
   $('start-lesson').addEventListener('click', () => {
     showScreen('classroom');
