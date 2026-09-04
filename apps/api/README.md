@@ -9,9 +9,16 @@ Deterministic by default: **no API keys, no network, no database.**
 ## Run
 
 ```bash
-python -m pip install -r apps/api/requirements.txt
-python -m uvicorn apps.api.main:app --reload --port 8077
+py -3.12 -m pip install -r apps/api/requirements.txt
 ```
+
+```bash
+py -3.12 -m uvicorn apps.api.main:app --reload --port 8077
+```
+
+Use `py -3.12` rather than `python`: installing Python 3.10 for the optional
+talking head puts it ahead on PATH in new shells, and GuruFlow's dependencies
+are not there.
 
 Everything in `requirements.txt` installs from wheels on Windows with no
 compiler toolchain.
@@ -28,7 +35,7 @@ Semantic vector RAG is deliberately optional because `chroma-hnswlib` needs a
 C++ toolchain:
 
 ```bash
-python -m pip install -r apps/api/requirements-vector.txt   # optional
+py -3.12 -m pip install -r apps/api/requirements-vector.txt   # optional
 set GURUFLOW_VECTOR_RAG=1
 ```
 
@@ -39,7 +46,7 @@ Run from the repository root so `services/` resolves.
 ## Tests
 
 ```bash
-python -m pytest apps/api/tests -q
+py -3.12 -m pytest apps/api/tests -q
 ```
 
 125 tests cover the planner, the evaluation branches, multi-format upload (PDF /
