@@ -1217,3 +1217,13 @@ input[type="range"]::-moz-range-thumb {
   border: 2px solid var(--border);
   background: var(--bg-input);
 }
+
+
+/* Hero teacher: a real frame from a rendered lesson, not an illustration. */
+.mini-avatar-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+  display: block;
+}
