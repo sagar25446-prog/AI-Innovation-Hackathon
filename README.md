@@ -18,10 +18,14 @@ or a correct `I = V/R` curve, and a plausible-but-wrong diagram would undermine
 the source-grounding the whole product rests on. Generative video is therefore
 deliberately not used for explanatory content.
 
-The teacher shown in the video and in the interactive view is a drawn avatar,
-not a photoreal lip-synced human. A D-ID adapter ships in `services/media/` for
-teams that want a cloud talking head, but it is optional and not on the default
-path. See [the integrated product](docs/INTEGRATED_PRODUCT.md) for the full SWOT.
+The teacher is a drawn avatar by default, so the product runs anywhere with no
+GPU. Teams with an NVIDIA card can switch on a **photoreal, lip-synced teacher**
+rendered offline with SadTalker - it composites into the video's teacher panel
+and needs about 6 GB of VRAM. Setup and measured render times are in
+[the talking-head guide](docs/TALKING_HEAD_SETUP.md); everything falls back to
+the drawn avatar if it is absent, so it is never required.
+
+See [the integrated product](docs/INTEGRATED_PRODUCT.md) for the full SWOT.
 
 ## Product loop
 
@@ -31,27 +35,69 @@ The focused demo uses a Class 9 Electricity upload and teaches Ohm's Law in Hing
 
 ## Run the product
 
+Needs **Python 3.12**. Everything installs from wheels - no compiler, no
+database, no build step.
+
 ```bash
-python -m pip install -r apps/api/requirements.txt
-python -m uvicorn apps.api.main:app --port 8077
+py -3.12 -m pip install -r apps/api/requirements.txt
 ```
 
-Open <http://127.0.0.1:8077/>. No build step, no database. Tests:
-`python -m pytest apps/api/tests -q`.
+```bash
+py -3.12 -m uvicorn apps.api.main:app --port 8077
+```
+
+Open <http://127.0.0.1:8077/> and press **Demo**.
+
+```bash
+py -3.12 -m pytest apps/api/tests -q
+```
+
+### Use `py -3.12`, not `python`
+
+If you also install Python 3.10 for the optional talking head, it takes over
+`python` on PATH in every **new** shell, and GuruFlow's dependencies are not
+there - you get `No module named uvicorn`. Naming the version avoids it
+entirely. Check with:
+
+```bash
+py -3.12 -c "import uvicorn, manim; print('ok')"
+```
+
+### Windows PowerShell
+
+PowerShell 5.1 rejects `&&` (`The token '&&' is not a valid statement
+separator`). Use `;` between commands, and `$env:NAME="value"` instead of
+`set NAME=value`. Or open **Git Bash**, where the commands in this README work
+verbatim.
 
 ### Enable the live Gemini brain (recommended for the demo)
 
-Lesson planning, answer evaluation and repair narration call **Gemini Flash
-(`gemini-2.5-flash`)** when a key is present, and fall back to the built-in
-deterministic engine otherwise. The top-right badge shows the live state.
+Lesson planning, answer evaluation and repair narration call **Gemini Flash**
+when a key is present, and fall back to the built-in deterministic engine
+otherwise. The top-right badge shows the live state.
 
-```bash
-# 1. Get a free key at https://aistudio.google.com/apikey
-# 2. Create apps/api/.env and add your key (never commit this file):
-#    GEMINI_API_KEY=your_key_here
-# 3. Restart, then the badge reads "live Gemini brain"
-python -m uvicorn apps.api.main:app --port 8077
-```
+1. Get a free key at <https://aistudio.google.com/apikey>
+2. Put it in **`apps/api/.env`** - create the file if it does not exist:
+
+   ```
+   GEMINI_API_KEY=your_key_here
+   ```
+
+3. **Restart the server.** `.env` is read once at import, so a key added to a
+   running server has no effect.
+
+Then `/health` reports `"gemini": true` and the badge reads *live Gemini brain*.
+
+> **Put the key in `.env`, never in `.env.example`.** `.env.example` is a
+> committed template - a key there is pushed to GitHub and lands in history,
+> where deleting it later does not help. `.env` is gitignored, and is the only
+> file the app actually loads.
+
+**The free tier allows 20 requests per model per day, per project.** Rotating a
+key does **not** reset that: the quota belongs to the AI Studio project, not the
+key. If you run out, either wait for the daily reset, create a key in a new
+project, or enable billing. Which model answers is resolved at runtime from a
+candidate list, so a model Google retires does not break planning.
 
 Other optional keys (all independent and fall back cleanly):
 `GURUFLOW_TTS_API_KEY`, `GURUFLOW_AVATAR_API_KEY`, `GURUFLOW_LLM_API_KEY`.
@@ -156,6 +202,77 @@ offline mode vs. an LLM-configured deployment - read that one before demoing.
 > honestly refuses other topics rather than teaching the wrong subject. With
 > it, "teach any topic" actually works. Create `apps/api/.env` with
 > `GEMINI_API_KEY=...` (free key: <https://aistudio.google.com/apikey>).
+
+## For contributors
+
+### Getting a working checkout
+
+```bash
+git clone https://github.com/sagar25446-prog/AI-Innovation-Hackathon.git
+```
+
+```bash
+cd AI-Innovation-Hackathon && py -3.12 -m pip install -r apps/api/requirements.txt && py -3.12 -m pytest apps/api/tests -q
+```
+
+A green suite means you are set up correctly. Run every command from the
+repository root so `services/` resolves.
+
+Semantic vector RAG is deliberately **not** in `requirements.txt`, because
+`chroma-hnswlib` needs a C++ toolchain and would break `pip install` for
+everyone who does not want it:
+
+```bash
+py -3.12 -m pip install -r apps/api/requirements-vector.txt
+```
+
+The JavaScript suites need Node and run separately:
+
+```bash
+node --test services/media/test/*.test.js services/visuals/test/*.test.js packages/contracts/test/*.test.js apps/web/test/*.test.js
+```
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `No module named uvicorn` | `python` resolved to another version | Use `py -3.12` |
+| `The token '&&' is not a valid statement separator` | PowerShell 5.1 | Use `;`, or Git Bash |
+| `command not found` on a `C:\...` path | Git Bash reads `\` as an escape | Use `/c/...` |
+| `"gemini": false` after adding a key | Key is in `.env.example`, or the server was not restarted | Put it in `.env`, restart |
+| `429 RESOURCE_EXHAUSTED` | Free tier: 20 requests/model/day **per project** | Wait for reset, new project, or billing |
+| Video button never enables | Manim or ffmpeg missing | Check `/health` -> `video.available` |
+| `talkingHead.usable: false` | Optional feature, off by default | `problems` in `/health` names what is missing |
+
+### Before a demo
+
+Warm the video cache - the first render of a scene takes about two minutes with
+the talking head enabled, and you do not want that happening in front of judges:
+
+```bash
+curl -X POST http://127.0.0.1:8077/lessons/LESSON_ID/video/prerender
+```
+
+Poll `GET /lessons/LESSON_ID/video/status` until `"complete": true`. That
+includes both misconception-repair scenes, not just the plan's scenes.
+
+Videos are cached in the system temp directory, so **do not run disk cleanup**
+between pre-rendering and demonstrating.
+
+### Repository layout
+
+| Path | What lives there |
+| --- | --- |
+| `apps/api/` | FastAPI teacher brain, serves the web client too |
+| `apps/web/` | Zero-build ES-module frontend |
+| `services/` | ingestion, rag, planner, evaluation, llm, voice, video, qa, media, visuals |
+| `packages/contracts/` | `lesson-contract.schema.json`, the single source of truth |
+| `tools/` | `check_portrait.py` for validating a talking-head portrait |
+| `docs/` | Setup guides, known limitations, third-party disclosure |
+
+Integrate through `packages/contracts/`. Read `AGENTS.md` before changing code
+outside your own area.
+
 
 ## Team ownership
 

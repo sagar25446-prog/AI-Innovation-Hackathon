@@ -9,7 +9,7 @@ repair flow, and the final report.
 The client is served by the teacher brain, so there is nothing to build:
 
 ```bash
-python -m uvicorn apps.api.main:app --port 8077
+py -3.12 -m uvicorn apps.api.main:app --port 8077
 ```
 
 Then open <http://127.0.0.1:8077/>.
