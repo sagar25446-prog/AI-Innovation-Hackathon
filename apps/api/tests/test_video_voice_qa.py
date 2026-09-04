@@ -461,3 +461,87 @@ def test_committed_seeds_match_the_current_demo_lesson_hashes():
         + ", ".join(missing)
         + ". Re-render them into demo-assets/videos/ (see demo-assets/README.md)."
     )
+
+
+# ---------------------------------------------------------------------------
+# Prerender / status agreement
+# ---------------------------------------------------------------------------
+
+
+def _demo_lesson(client):
+    response = client.post(
+        "/lessons/plan",
+        json={
+            "learner": {
+                "level": "beginner",
+                "language": "hinglish",
+                "availableMinutes": 20,
+                "goal": "Understand Ohm's Law",
+            },
+            "topic": "Ohm's Law",
+        },
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_status_covers_the_repair_scenes_prerender_warms(client):
+    """The bug this guards: status counted only the plan's scenes.
+
+    Prerender warms the two repair scenes as well, so status reported
+    "all ready" while the flagship repair scene was still rendering.
+    """
+    plan = _demo_lesson(client)
+    lesson_id = plan["id"]
+
+    status = client.get(f"/lessons/{lesson_id}/video/status").json()
+    assert status["total"] == len(plan["scenes"]) + 2, (
+        "status must include both repair scenes, not just the plan's scenes"
+    )
+
+    repair = [s for s in status["scenes"] if s["isRepair"]]
+    assert len(repair) == 2
+    assert all(not s["isRepair"] for s in status["scenes"][: len(plan["scenes"])])
+
+
+def test_status_total_matches_prerender_count(client, monkeypatch):
+    """The two endpoints must never disagree about what gets rendered."""
+    plan = _demo_lesson(client)
+    lesson_id = plan["id"]
+
+    queued: list[list[dict]] = []
+
+    def fake_prerender(scenes, language):
+        queued.append(list(scenes))
+        return [f"vid-{i}" for i, _ in enumerate(scenes)]
+
+    monkeypatch.setattr(video_service, "video_generation_available", lambda: True)
+    monkeypatch.setattr(video_service, "prerender_lesson", fake_prerender)
+
+    prerendered = client.post(f"/lessons/{lesson_id}/video/prerender").json()
+    status = client.get(f"/lessons/{lesson_id}/video/status").json()
+
+    assert prerendered["count"] == status["total"]
+    assert len(queued[0]) == status["total"]
+
+
+def test_complete_is_false_while_anything_is_unrendered(client):
+    """`complete` is the signal a demo script should trust."""
+    plan = _demo_lesson(client)
+    status = client.get(f"/lessons/{plan['id']}/video/status").json()
+
+    assert status["complete"] is (status["ready"] == status["total"])
+    if status["ready"] < status["total"]:
+        assert status["complete"] is False
+
+
+def test_status_reports_failed_scenes_by_id(client):
+    plan = _demo_lesson(client)
+    status = client.get(f"/lessons/{plan['id']}/video/status").json()
+    assert isinstance(status["failed"], list)
+    for scene_id in status["failed"]:
+        assert any(s["sceneId"] == scene_id for s in status["scenes"])
+
+
+def test_status_404s_for_an_unknown_lesson(client):
+    assert client.get("/lessons/nope/video/status").status_code == 404

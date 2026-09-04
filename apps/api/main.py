@@ -820,6 +820,26 @@ def serve_scene_video(video_id: str, request: Request) -> Response:
     )
 
 
+def _lesson_video_scenes(session: LessonSession) -> list[dict[str, Any]]:
+    """Every scene whose video the lesson may need, in render order.
+
+    The single source of truth for prerender *and* status. They were separate
+    lists once, and drifted: prerender warmed the two repair scenes while
+    status counted only the plan's, so status reported "all ready" while the
+    flagship repair scene was still rendering. Anyone trusting it would have
+    walked into a demo with a spinner at the worst possible moment.
+    """
+    language = session.plan["learner"]["language"]
+    scenes = list(session.plan["scenes"])
+
+    # Repair scenes are not in the plan - they are spliced in when a learner
+    # gets the checkpoint wrong - but they are the moment the demo hinges on,
+    # so they are warmed with everything else.
+    for misconception in (DIRECT_PROPORTIONALITY, CONSTANT_CURRENT):
+        scenes.append(build_repair_scene(misconception, language))
+    return scenes
+
+
 @app.post("/lessons/{lesson_id}/video/prerender")
 def prerender_lesson_videos(lesson_id: str) -> dict[str, Any]:
     """Warm the whole lesson's video cache so the demo never waits."""
@@ -830,33 +850,37 @@ def prerender_lesson_videos(lesson_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="Video generation unavailable")
 
     language = session.plan["learner"]["language"]
-    scenes = list(session.plan["scenes"])
-
-    # The repair scene is the flagship moment, so warm it too rather than
-    # making the learner wait for it at the worst possible time.
-    for misconception in (DIRECT_PROPORTIONALITY, CONSTANT_CURRENT):
-        scenes.append(build_repair_scene(misconception, language))
-
-    ids = video_service.prerender_lesson(scenes, language)
+    ids = video_service.prerender_lesson(_lesson_video_scenes(session), language)
     return {"lessonId": lesson_id, "videoIds": ids, "count": len(ids)}
 
 
 @app.get("/lessons/{lesson_id}/video/status")
 def lesson_video_status(lesson_id: str) -> dict[str, Any]:
+    """Render status for every scene prerender warms, repair scenes included."""
     session = repository.get_session(lesson_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Lesson not found")
+
     language = session.plan["learner"]["language"]
-    scenes = session.plan["scenes"]
     statuses = [
-        {"sceneId": scene["id"], **_video_payload(video_service.video_id(scene, language))}
-        for scene in scenes
+        {
+            "sceneId": scene["id"],
+            "isRepair": bool(scene.get("isRepair")),
+            **_video_payload(video_service.video_id(scene, language)),
+        }
+        for scene in _lesson_video_scenes(session)
     ]
+
     ready = sum(1 for s in statuses if s["status"] == "ready")
+    failed = [s["sceneId"] for s in statuses if s["status"] == "failed"]
     return {
         "lessonId": lesson_id,
         "ready": ready,
         "total": len(statuses),
+        # The unambiguous "safe to demo" signal. `ready == total` required the
+        # caller to know that total already included the repair scenes.
+        "complete": ready == len(statuses),
+        "failed": failed,
         "scenes": statuses,
     }
 
