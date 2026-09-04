@@ -635,3 +635,231 @@ they drift.
 **5. Before demoing:** start the server, open the app, press **Demo**, and
 confirm **Watch video** is enabled immediately. If it says "Rendering", the
 seeds are stale - see step 4.
+
+---
+
+# ADDENDUM - 2026-09-04 03:40: "implement all the changes"
+
+Follow-up run closing the gaps the summary above listed as open. **The FINAL
+SUMMARY above is superseded where the two disagree**; this addendum is current.
+
+## Node.js installed - the JS tests are no longer unverified
+
+Installed Node 24.19.0 via `winget install OpenJS.NodeJS.LTS`. This was the
+previous run's biggest verification hole.
+
+**Running them immediately found two real defects:**
+
+1. **The provider was not importable outside a browser.** It did
+   `import { AvatarProvider } from '/vendor/media/interfaces.js'` - a *browser*
+   URL served by the API's `/vendor` mount. Node resolved it as
+   `C:/vendor/media/interfaces.js` and the whole test file failed to load. So
+   the module could never have been unit-tested as written.
+
+   *Fix:* the class now implements the interface **structurally** rather than
+   by inheritance. `DefaultSceneRenderer` duck-types its avatar provider (it
+   only ever calls `generateAvatar`), so nothing changes at runtime. Two new
+   conformance tests import the real `AvatarProvider` by relative path and
+   assert the method and arity match, so "structural" stays honest rather than
+   becoming "drifted".
+
+2. **An injected probe that threw crashed the lesson.** `isAvailable` called
+   `this.probe(url)` with no guard. The default probe catches internally, so
+   this was invisible - but any other probe, or a transient network error,
+   would propagate out. My own test asserted the safe behaviour and the
+   implementation did not have it.
+
+   *Fix:* a probe failure now means "cannot confirm" = "absent", degrading to
+   the drawn panel.
+
+**JS results, all now actually executed:**
+
+| Suite | Tests | Result |
+| --- | --- | --- |
+| `apps/web/test` (new) | 21 | pass |
+| `services/media/test` | 34 | pass |
+| `services/visuals/test` | 33 | pass |
+| `packages/contracts/test` | 33 | pass |
+| **Total JS** | **121** | **pass** |
+
+The three pre-existing suites had also never been run on this machine.
+
+## Phase 4's scoped gap: now closed
+
+Both deferred builders implemented, so **no contract visual type falls through
+to the generic layout** - asserted by
+`test_no_contract_visual_type_is_left_on_the_generic_fallback`.
+
+* **`build_timeline`** (History) - directional dated axis with an arrowhead,
+  markers, and events alternating above/below so adjacent labels cannot
+  collide. Accepts `events`/`items`/`points` and `date`/`year`/`when` +
+  `label`/`title`/`text`/`event`, since no fixture pins the shape. Capped at 6
+  events, because more cannot be drawn legibly.
+* **`build_labelled_diagram`** (Biology) - a body with an interior structure
+  and labelled leader lines fanned left/right. Plain `diagram` now routes here;
+  the composite repair descriptor still takes precedence.
+
+**Verified by rendering both** and inspecting frames: the timeline shows
+1857/1919/1930/1947 correctly alternating; the diagram shows five parts with
+leader lines to anchor points, no overlap.
+
+**Honest caveat, written into `docs/KNOWN_LIMITATIONS.md` rather than glossed:**
+these are *schematics*. Diagram label positions are assigned by order, not
+anatomy - it will not show where a chloroplast actually sits. Timeline events
+are spaced evenly in the order given, not proportionally by date, because
+free-text dates ("c. 1500 BCE") cannot be reliably parsed and guessing would
+misinform. Section 2 of that doc now leads with what is implemented and states
+the caveat plainly.
+
+## Avatar clip roles: both gaps closed
+
+* **`complete` is now wired.** The report had no media lifecycle, which is why
+  it was deferred. Rather than force a scene render, the report requests the
+  clip straight from the provider and shows it in a circular player on the
+  report card. Absent clips throw, per the documented contract, and the slot
+  stays hidden - **verified: `report avatar slot hidden: true`** with no clips
+  present, and no layout shift.
+* **`correct` no longer leaks.** The evaluation result is now stamped with the
+  scene index it came from, and `answeredCorrectly` is only true for the scene
+  immediately following that checkpoint.
+
+**Verified end to end in the browser:** a full run probes exactly four distinct
+clip roles - `intro`, `idle`, `repair_transition`, `complete` - and only four
+HEAD requests for an 8-scene lesson, confirming both the role mapping and the
+memoisation.
+
+## Test status
+
+* **Python: 180 passed, 1 skipped** (was 169) - verified in the working env
+  **and** the clean venv without vector extras.
+* **JS: 121 passed** across four suites.
+* Zero tracebacks; the only non-2xx are the four expected avatar probes.
+
+## What genuinely remains
+
+**1. `GEMINI_API_KEY` - I cannot do this one.** There is no key on this machine
+and I will not fabricate one. `apps/api/.env` still does not exist. This is the
+single highest-value remaining item and it is two minutes of your time:
+
+```
+GEMINI_API_KEY=your-key-here
+```
+
+Until then the live LLM upload path stays unrun (its plumbing is unit-tested),
+`/health` reports `"gemini": false`, and off-catalogue topics are honestly
+refused rather than taught.
+
+**2. Avatar clip files.** Unchanged: drop `.mp4`s into
+`apps/web/public/avatars/<language>/<role>.mp4`, then set
+`GURUFLOW_HIDE_BUILTIN_TEACHER=1`. Everything around them is now wired and
+tested, including `complete`.
+
+**3. Anatomical accuracy in diagrams / proportional timelines** - deliberately
+not attempted, documented as a caveat rather than left implied.
+
+---
+
+# ADDENDUM 2 - 2026-09-04: Gemini key verified, three real bugs found
+
+The key was added to `apps/api/.env.example` in commit `9d9cfe3` and pushed to
+`origin/main`.
+
+## SECURITY: the key is in git history and must be rotated
+
+`.env.example` is a **committed template**. The key is therefore in a pushed
+commit on `origin/main`, visible to anyone with repo access and to anything
+that has cloned or mirrored it. Removing it in a later commit does not remove
+it from history.
+
+**Rotate the key at <https://aistudio.google.com/apikey>.** That is the only
+effective remediation; everything below is hygiene.
+
+Actions taken:
+* Key removed from `.env.example` (now empty again) with an explicit warning.
+* Key written to `apps/api/.env`, which is gitignored and is **the only file
+  the app loads** - `main.py` calls `load_dotenv` on `.env`, never on
+  `.env.example`. So the key as committed was never being read at all.
+
+## The key works; my format guess was wrong
+
+I initially expected the `AIza…` (39 char) format and flagged `AQ.Ab8…` as
+suspect. Testing proved otherwise: it authenticates and lists 50 models. Google
+issues both formats. Corrected before it misled anyone.
+
+## Bug 1 - the default model is retired (planning silently disabled)
+
+`gemini-2.5-flash` returns **404 NOT_FOUND: "no longer available to new
+users"** for keys issued after its retirement. It still appears in ListModels,
+so the failure is invisible until a call is made. Effect: `generate_plan`
+returned `None` and every off-catalogue topic fell back to the "unsupported
+topic" refusal *even with a valid key*.
+
+Fixed with ordered candidates (`gemini-3.6-flash`, `gemini-flash-latest`,
+`gemini-3.5-flash`, `gemini-2.5-flash`), resolved on first use and remembered.
+Also handles:
+* **404** - permanent for this key; the model is never retried this process.
+* **503 / busy** - try the next model, then one retry round after 1.5s.
+* **429 / quota** - try the next model, but no second round; a daily cap will
+  not clear in 1.5 seconds.
+* anything else - propagates immediately, because a malformed request is not a
+  model problem and retrying would mask it.
+
+Error precedence also matters: a 404 names a model we deliberately skip, so the
+raised error now prefers "out of quota" or "busy" over it. Without that, the
+quota probe reported the wrong cause.
+
+`GURUFLOW_GEMINI_MODEL` still overrides everything.
+
+## Bug 2 - LLM lessons had no checkpoint (flagship loop dead off-catalogue)
+
+The prompt asks the model for `"isCheckpoint": true`, but `_normalise_llm_scenes`
+only copied `checkpointId` - so the flag was **silently dropped**. Every
+LLM-planned lesson therefore had no checkpoint, meaning no question, no
+misconception diagnosis and no repair scene on any topic outside the curated
+Electricity library. The product's flagship feature was inert wherever the LLM
+was doing the work.
+
+Fixed: `isCheckpoint` now maps to a real checkpoint id, and if a plan comes back
+with no checkpoint at all the penultimate scene is marked (penultimate so a
+closing scene still follows the question).
+
+## Bug 3 - the test suite became non-deterministic
+
+`main.py` loads `.env` at import, so once a real key existed the suite started
+calling the live model. Consequences: **different tests failed on consecutive
+runs**, runtime went from ~6s to **271s**, and the suite would pass for a
+teammate without a key and fail for one with a key.
+
+Fixed with `apps/api/tests/conftest.py`: the LLM is disabled for every test by
+default, and tests needing it opt in with `@pytest.mark.live_llm` (skipped when
+no key is configured). The suite is a deterministic-behaviour regression guard;
+it must not change meaning based on who is running it.
+
+## Verification
+
+| Check | Result |
+| --- | --- |
+| Key authenticates | yes - 50 models listed |
+| `/health` | `gemini: true`, `mode: llm-enhanced` |
+| **1a** off-catalogue topic (photosynthesis) | **7 real scenes**, on-topic, no Electricity leakage, `unsupportedTopic: false` |
+| **1b** upload outside the library | **NOT VERIFIED** - free-tier quota exhausted mid-run |
+| **1c** no-key honesty | still honest: refusal scene, no fabricated citations |
+| Suite | **195 passed, 2 skipped, 10.4s** (was 180) |
+
+**1b is blocked on quota, not on code.** The free tier allows **20 requests per
+model per day** and my verification runs spent it (`429 RESOURCE_EXHAUSTED`,
+`limit: 20`). The upload path is unit-tested; the live end-to-end confirmation
+needs quota. Re-run after reset:
+
+```
+python -m pytest apps/api/tests -q -m live_llm
+```
+
+It **skips** rather than fails when quota is spent, so it will not produce false
+alarms.
+
+## Remaining
+
+1. **Rotate the leaked key** (above). Then put the new one in `apps/api/.env`.
+2. Re-run the `live_llm` test once quota resets, to close 1b.
+3. Avatar clip files - unchanged.

@@ -48,42 +48,39 @@ Without it, "teach any topic" is honestly scoped rather than delivered, and
 
 ---
 
-## 2. Subject-specific visuals are only implemented for Physics/Maths
+## 2. Subject-specific visuals: implemented, but schematic
 
-`services/video/scenes.py` has real animated builders for four visual types:
+`services/video/scenes.py` now has a purpose-built animated builder for
+**every** visual type in the contract - nothing falls through to a generic
+layout:
 
-| Visual type | Status |
-| --- | --- |
-| `equation` | Real - stepped rows, final step highlighted |
-| `graph` | Real - drawn axes, plotted curve, markers |
-| `circuit` | Real - battery, load, animated charge flow |
-| `concept_map` | Real - hierarchy with connecting edges |
-| `diagram` | **Partial** - renders the composite repair descriptor (equation + analogy + graph). A plain biological diagram still falls back to labelled chips |
-| `timeline` | **Generic fallback** - not a real historical timeline |
-| `code_trace` | Real - code block with execution-order highlighting |
+| Visual type | Subject | What it draws |
+| --- | --- | --- |
+| `equation` | Maths / Physics | Stepped rows, final step highlighted |
+| `graph` | Maths / Physics | Drawn axes, plotted curve, markers |
+| `circuit` | Physics | Battery, load, animated charge flow |
+| `concept_map` | Any | Hierarchy with connecting edges |
+| `code_trace` | Programming | Code with line numbers and an execution cursor stepping through the run order |
+| `timeline` | History | Directional dated axis, events alternating above and below so labels cannot collide |
+| `diagram` | Biology / Physics | Labelled schematic with leader lines; also renders the composite repair descriptor |
 
-The rubric asks for subject-aware visuals across Biology (labelled diagrams),
-History (timelines, maps) and Programming (code, execution flow).
+### The honest caveat
 
-**Programming is now covered:** `code_trace` renders a syntax-styled code block
-with line numbers and an execution cursor that steps through the run order.
+The Biology diagram is a **schematic, not an illustration.** It draws a generic
+body with an interior structure and points labelled leader lines at distinct
+positions on it. That is the *structure* of a labelled diagram, and it is far
+more useful than a row of chips - but the label positions are assigned by
+order, not by anatomy. It will not show you where the chloroplast actually sits
+in a plant cell.
 
-**Biology and History are not.** A `timeline` renders as a row of labelled
-chips, not a dated axis with events placed on it. A plain `diagram` (a labelled
-cell, say) renders as chips rather than a drawing with leader lines to parts.
+Drawing anatomically correct diagrams needs per-subject artwork, not a generic
+builder. The scene titles say "(schematic)" for this reason. Treat these as
+structural aids, not reference figures.
 
-This is a **scoped, deliberate gap, not a bug**. The dispatch table, the
-contract, the renderer and the caching all handle these types correctly - what
-is missing is two purpose-built drawing functions. They were not attempted
-rather than half-built, because a fallback that renders honestly is better than
-a "timeline" that is really a row of boxes pretending to be one. A judge asking
-for a History lesson would see readable content, correctly cited, in a layout
-that does not claim to be a timeline.
-
-The curated content is Physics anyway, so no shipped lesson currently requests
-them. They matter the moment the content library extends beyond Electricity.
-
----
+Similarly, the timeline places events evenly along the axis in the order given,
+not proportionally by date. Free-text dates ("c. 1500 BCE", "1947") cannot be
+reliably parsed into positions, and guessing would misinform; trusting the
+author's ordering does not.
 
 ## 3. Content depth
 

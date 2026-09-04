@@ -478,7 +478,10 @@ def build_diagram(data: dict[str, Any]):
         data.get("composite") or data.get("equation") or data.get("analogy")
     )
     if not is_composite:
-        return build_fallback(data)
+        # A plain diagram is a labelled schematic (Biology and friends);
+        # build_labelled_diagram falls back to chips itself if there are no
+        # parts to label.
+        return build_labelled_diagram(data)
 
     equation = data.get("equation") or {}
     steps = [
@@ -662,6 +665,191 @@ def build_code_trace(data: dict[str, Any]):
     return group, animations
 
 
+def _timeline_events(data: dict[str, Any]) -> list[dict[str, str]]:
+    """Normalise timeline events.
+
+    No fixture pins this shape, so several plausible key names are accepted
+    rather than forcing one on whoever authors the content.
+    """
+    raw = data.get("events") or data.get("items") or data.get("points") or []
+    events: list[dict[str, str]] = []
+    for entry in raw:
+        if isinstance(entry, str):
+            events.append({"date": "", "label": entry})
+            continue
+        if not isinstance(entry, dict):
+            continue
+        date = entry.get("date") or entry.get("year") or entry.get("when") or ""
+        label = (
+            entry.get("label")
+            or entry.get("title")
+            or entry.get("text")
+            or entry.get("event")
+            or ""
+        )
+        if not (str(date) or str(label)):
+            continue
+        events.append({"date": str(date), "label": str(label)})
+    return events[:6]
+
+
+def build_timeline(data: dict[str, Any]):
+    """A dated axis with events placed along it, for History.
+
+    Events alternate above and below the axis so adjacent labels cannot
+    collide, which is the failure mode that makes a naive timeline unreadable.
+    Ordering is the order given: the content author knows the sequence, and
+    guessing from free-text dates ("c. 1500 BCE") would be worse than trusting
+    them.
+    """
+    events = _timeline_events(data)
+    if not events:
+        return build_fallback(data)
+
+    width = 10.0
+    axis = Line(
+        LEFT * width / 2, RIGHT * width / 2,
+        stroke_color=BORDER, stroke_width=4,
+    )
+    group = VGroup(axis)
+
+    # Arrowhead so the axis reads as a direction of time, not a rule.
+    head = VGroup(
+        Line(axis.get_right(), axis.get_right() + LEFT * 0.22 + UP * 0.14,
+             stroke_color=BORDER, stroke_width=4),
+        Line(axis.get_right(), axis.get_right() + LEFT * 0.22 + DOWN * 0.14,
+             stroke_color=BORDER, stroke_width=4),
+    )
+    group.add(head)
+
+    count = len(events)
+    spacing = width / (count + 1)
+    markers = VGroup()
+    entries = VGroup()
+
+    for index, event in enumerate(events):
+        x = axis.get_left()[0] + spacing * (index + 1)
+        above = index % 2 == 0
+        direction = UP if above else DOWN
+
+        dot = Dot([x, 0, 0], radius=0.1, color=ACCENT)
+        stem = Line(
+            [x, 0, 0], [x, 0.62 if above else -0.62, 0],
+            stroke_color=BORDER, stroke_width=2,
+        )
+        markers.add(dot, stem)
+
+        block = VGroup()
+        if event["date"]:
+            date = label(event["date"], 19, ACCENT)
+            block.add(date)
+        if event["label"]:
+            caption = label(event["label"], 17, TEXT)
+            _fit(caption, spacing * 1.9, 0.9)
+            block.add(caption)
+        if not len(block):
+            continue
+        block.arrange(DOWN, buff=0.1)
+        block.next_to(stem.get_end(), direction, buff=0.14)
+        entries.add(block)
+
+    group.add(markers, entries)
+
+    title_text = data.get("title") or data.get("caption")
+    if title_text:
+        title = label(str(title_text), 20, DIM)
+        title.next_to(group, UP, buff=0.35)
+        group.add(title)
+
+    animations = [
+        Create(VGroup(axis, head), run_time=0.8),
+        # "step-progress", matching services/visuals' render hint for timelines.
+        FadeIn(markers, run_time=0.5),
+        FadeIn(entries, shift=UP * 0.12, run_time=0.9),
+    ]
+    return group, animations
+
+
+def _diagram_parts(data: dict[str, Any]) -> list[str]:
+    """Label text for a labelled diagram, from any of the plausible keys."""
+    raw = data.get("parts") or data.get("labels") or data.get("elements") or []
+    parts: list[str] = []
+    for entry in raw:
+        if isinstance(entry, str):
+            parts.append(entry)
+        elif isinstance(entry, dict):
+            text = entry.get("label") or entry.get("name") or entry.get("text") or ""
+            if text:
+                parts.append(str(text))
+    return parts[:6]
+
+
+def build_labelled_diagram(data: dict[str, Any]):
+    """A labelled schematic: a central body with leader lines out to parts.
+
+    Deliberately schematic rather than illustrative. It draws a generic organic
+    body and points labelled leader lines at distinct positions on it - which is
+    the *structure* of a labelled biology diagram, and honest about being a
+    schematic. It is not a botanically accurate cell, and does not pretend to
+    be; drawing a real one needs per-subject artwork, not a generic builder.
+    """
+    parts = _diagram_parts(data)
+    if not parts:
+        return build_fallback(data)
+
+    body = Circle(radius=1.45, stroke_color=ACCENT, stroke_width=3,
+                  fill_color=PANEL, fill_opacity=1)
+    # A second inner shape so the body reads as a structure with an interior.
+    inner = Circle(radius=0.52, stroke_color=WARN, stroke_width=2.5,
+                   fill_color=BG, fill_opacity=1)
+    inner.move_to(body.get_center() + UP * 0.18 + LEFT * 0.12)
+    group = VGroup(body, inner)
+
+    title_text = data.get("title") or data.get("description")
+    if title_text:
+        title = label(str(title_text), 20, DIM)
+        _fit(title, 9.0, 0.5)
+        title.next_to(body, UP, buff=1.05)
+        group.add(title)
+
+    leaders = VGroup()
+    captions = VGroup()
+    count = len(parts)
+    # Fan the labels down the left and right sides rather than radially, so
+    # text never overlaps the body.
+    for index, part in enumerate(parts):
+        right_side = index % 2 == 0
+        row = index // 2
+        side = RIGHT if right_side else LEFT
+        y = 0.95 - row * 0.95
+
+        anchor = body.get_center() + side * 1.15 + UP * (y * 0.55)
+        elbow = body.get_center() + side * 2.35 + UP * y
+        end = body.get_center() + side * 3.05 + UP * y
+
+        leaders.add(
+            Line(anchor, elbow, stroke_color=BORDER, stroke_width=2),
+            Line(elbow, end, stroke_color=BORDER, stroke_width=2),
+            Dot(anchor, radius=0.055, color=WARN),
+        )
+
+        text = label(part, 18, TEXT)
+        _fit(text, 2.9, 0.42)
+        text.next_to(end, side, buff=0.16)
+        captions.add(text)
+
+    group.add(leaders, captions)
+
+    animations = [
+        Create(body, run_time=0.7),
+        FadeIn(inner, run_time=0.3),
+        # "draw-paths", matching services/visuals' render hint for diagrams.
+        Create(leaders, run_time=0.9),
+        FadeIn(captions, run_time=0.6),
+    ]
+    return group, animations
+
+
 def build_fallback(data: dict[str, Any]):
     chips = VGroup()
     values = [v for v in data.values() if isinstance(v, str)][:5]
@@ -682,7 +870,7 @@ BUILDERS = {
     "circuit": build_circuit,
     "concept_map": build_concept_map,
     "diagram": build_diagram,
-    "timeline": build_fallback,
+    "timeline": build_timeline,
     "code_trace": build_code_trace,
 }
 

@@ -10,13 +10,157 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Model read from env. Default to a current, widely-available Flash model.
-_MODEL_NAME = os.environ.get("GURUFLOW_GEMINI_MODEL", "gemini-2.5-flash").strip()
+# Model candidates, tried in order until one answers.
+#
+# Google retires models for *new* API keys without removing them from the
+# ListModels response, so a hardcoded name silently 404s on a fresh key while
+# still appearing available. gemini-2.5-flash did exactly that. Rather than
+# swap in another name that will age out the same way, the first candidate that
+# responds is used and remembered.
+#
+# GURUFLOW_GEMINI_MODEL still wins outright when set, and is tried first.
+_MODEL_CANDIDATES = [
+    "gemini-3.6-flash",     # Google's own replacement recommendation
+    "gemini-flash-latest",  # moving alias, survives future retirements
+    "gemini-3.5-flash",
+    "gemini-2.5-flash",     # legacy; still valid for older keys
+]
+
+_CONFIGURED_MODEL = os.environ.get("GURUFLOW_GEMINI_MODEL", "").strip()
+
+# Models this key has already been told it cannot use. A 404 is permanent for
+# the life of the process, so retrying one wastes a round-trip on every call
+# and, worse, can be the error a transient round ends on - masking the real
+# "everything is busy" cause.
+_DEAD_MODELS: set[str] = set()
+
+# Resolved lazily on first successful call, then reused.
+_MODEL_NAME: str | None = _CONFIGURED_MODEL or None
+
+
+def _candidate_models() -> list[str]:
+    """Model names to try, configured one first, without duplicates."""
+    ordered = ([_CONFIGURED_MODEL] if _CONFIGURED_MODEL else []) + _MODEL_CANDIDATES
+    seen: list[str] = []
+    for name in ordered:
+        if name and name not in seen and name not in _DEAD_MODELS:
+            seen.append(name)
+    return seen
+
+
+def _is_model_unavailable(error: Exception) -> bool:
+    """True when the error means 'this model, not this request' (404/NOT_FOUND)."""
+    text = str(error)
+    return "404" in text or "NOT_FOUND" in text
+
+
+def _is_quota_exhausted(error: Exception) -> bool:
+    """True for 429 / RESOURCE_EXHAUSTED - a spent quota, not a busy server.
+
+    Worth separating from overload: the free tier's cap is per model per *day*,
+    so trying a different model can help but retrying the same set seconds
+    later cannot. Saying "quota exhausted" in the log also saves whoever reads
+    it from hunting for a bug that is not there.
+    """
+    text = str(error)
+    return "RESOURCE_EXHAUSTED" in text or "429" in text
+
+
+def _is_transient(error: Exception) -> bool:
+    """True for load/quota errors that another model or a retry may survive.
+
+    A 503 on one Flash model does not mean every model is busy, and collapsing
+    the lesson to "unsupported topic" because of a momentary spike is a far
+    worse outcome than trying the next candidate.
+    """
+    text = str(error)
+    return any(
+        marker in text
+        for marker in ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "overloaded")
+    )
+
+
+def _call_with_model_fallback(call, rounds: int = 2):
+    """Run ``call(model_name)``, working around retired and overloaded models.
+
+    ``call`` takes one argument, the model name. A model that reports
+    NOT_FOUND is skipped permanently for this process; one that reports 503 or
+    429 is skipped for now but stays a candidate. Anything else propagates
+    immediately, because it is about the request rather than the model.
+
+    Two rounds with a short pause between them is enough to ride out the brief
+    demand spikes Gemini Flash sees, without stalling a lesson for long.
+    """
+    global _MODEL_NAME
+
+    if _MODEL_NAME:
+        try:
+            return call(_MODEL_NAME)
+        except Exception as exc:
+            if not (_is_model_unavailable(exc) or _is_transient(exc)):
+                raise
+            logger.warning(
+                "Model %s failed (%s); re-resolving.", _MODEL_NAME, type(exc).__name__
+            )
+            _MODEL_NAME = None
+
+    # A 404 names a model we deliberately skip, so it is the least useful thing
+    # to surface. Prefer the reason we could not use a model we *would* have
+    # used - "out of quota" or "busy" - and fall back to the 404 only if
+    # nothing else failed.
+    last_error: Exception | None = None
+    last_skip_error: Exception | None = None
+    for round_index in range(max(1, rounds)):
+        if round_index:
+            time.sleep(1.5)
+            logger.info("Retrying Gemini after a transient failure.")
+        # Reset per round: a spent daily quota is not worth a second pass.
+        every_failure_was_quota = True
+        for name in _candidate_models():
+            try:
+                result = call(name)
+            except Exception as exc:
+                if _is_model_unavailable(exc):
+                    # Permanent for this key: never try it again this process.
+                    _DEAD_MODELS.add(name)
+                    logger.info("Model %s not available for this key; skipping.", name)
+                    last_skip_error = exc
+                    continue
+                if _is_quota_exhausted(exc):
+                    logger.warning(
+                        "Model %s: quota exhausted for this key; trying the next.",
+                        name,
+                    )
+                elif _is_transient(exc):
+                    every_failure_was_quota = False
+                    logger.info("Model %s is busy; trying the next.", name)
+                else:
+                    raise
+                last_error = exc
+                continue
+            _MODEL_NAME = name
+            logger.info("Using Gemini model: %s", name)
+            return result
+
+        if every_failure_was_quota:
+            logger.error(
+                "Every Gemini model is out of quota for this key. The free tier "
+                "allows 20 requests per model per day. Falling back to the "
+                "deterministic path."
+            )
+            break
+
+    if last_error:
+        raise last_error
+    if last_skip_error:
+        raise last_skip_error
+    raise RuntimeError("No Gemini model candidates were configured.")
 
 _gemini_client = None
 _model_attempted = False
@@ -44,7 +188,7 @@ def _get_gemini_client():
         # Modern, supported SDK: https://github.com/google-gemini/google-genai
         from google import genai
         _gemini_client = genai.Client(api_key=api_key)
-        logger.info("Loaded Gemini client, model: %s", _MODEL_NAME)
+        logger.info("Loaded Gemini client (model resolved on first call)")
         return _gemini_client
     except Exception as exc:
         logger.warning("Could not initialise Gemini client: %s", exc)
@@ -62,13 +206,15 @@ def _generate_json(prompt: str) -> dict[str, Any] | None:
     if client is None:
         return None
     try:
-        response = client.models.generate_content(
-            model=_MODEL_NAME,
-            contents=prompt,
-            config={
-                "response_mime_type": "application/json",
-                "temperature": 0.4,
-            },
+        response = _call_with_model_fallback(
+            lambda model: client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "temperature": 0.4,
+                },
+            )
         )
         text = (response.text or "").strip()
         return _parse_json_response(text)
@@ -83,10 +229,12 @@ def _generate_text(prompt: str) -> str | None:
     if client is None:
         return None
     try:
-        response = client.models.generate_content(
-            model=_MODEL_NAME,
-            contents=prompt,
-            config={"temperature": 0.6},
+        response = _call_with_model_fallback(
+            lambda model: client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config={"temperature": 0.6},
+            )
         )
         text = (response.text or "").strip()
         return text if text else None
