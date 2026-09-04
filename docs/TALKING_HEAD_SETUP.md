@@ -110,9 +110,20 @@ fix that before installing anything.
 `pip install -r requirements.txt` on its own pulls a **CPU-only** torch, and
 SadTalker then runs at a crawl while looking like it is working:
 
+Upgrade pip first, then use **`--extra-index-url`**, not `--index-url`:
+
 ```bash
-C:\SadTalker\.venv\Scripts\python -m pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
+C:\SadTalker\.venv\Scripts\python -m pip install --upgrade pip setuptools wheel
 ```
+
+```bash
+C:\SadTalker\.venv\Scripts\python -m pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --extra-index-url https://download.pytorch.org/whl/cu118
+```
+
+`--index-url` **replaces** PyPI rather than adding to it, so pip cannot find
+build dependencies that only live there and fails with
+`No matching distribution found for flit_core`. `--extra-index-url` keeps PyPI
+available. (Verified: `--index-url` fails on a clean 3.10 venv.)
 
 Verify CUDA is live before going further:
 
@@ -128,6 +139,21 @@ Then the rest:
 ```bash
 C:\SadTalker\.venv\Scripts\python -m pip install -r C:\SadTalker\requirements.txt
 ```
+
+**Let this finish.** It installs ~60 packages and downgrades numpy to 1.23.4.
+Interrupting it leaves a half-installed environment whose only symptom is
+`ModuleNotFoundError: No module named 'cv2'` much later.
+
+Then pin setuptools back:
+
+```bash
+C:\SadTalker\.venv\Scripts\python -m pip install "setuptools<81"
+```
+
+Setuptools 81 removed `pkg_resources`, which librosa 0.9.2 imports at module
+level. Without this, inference dies on
+`ModuleNotFoundError: No module named 'pkg_resources'`. The `--upgrade
+setuptools` in the previous step is what pulls in the version that breaks it.
 
 The venv is never "activated" here; every command calls its interpreter by full
 path. That is deliberate - it removes a whole class of "which python am I in"
@@ -177,6 +203,27 @@ C:\SadTalker\
     ├── detection_Resnet50_Final.pth
     └── parsing_parsenet.pth
 ```
+
+### ffmpeg must be on PATH for the standalone run
+
+SadTalker's final step shells out to a bare `ffmpeg` to mux audio onto the
+video. If it is not on PATH the model runs to completion and *then* dies with
+`FileNotFoundError: ... .mp4` - having burned the entire render.
+
+winget installs to a directory that is not on PATH until you open a new shell,
+so either restart the terminal after installing ffmpeg, or prepend it for the
+run:
+
+```bash
+set PATH=%LOCALAPPDATA%\Microsoft\WinGet\Links;%PATH%
+```
+
+Confirm before running: `ffmpeg -version` must print something.
+
+GuruFlow itself does not need this. `services/video/talking_head.py` puts a
+correctly-named ffmpeg on the subprocess PATH itself, so the *integrated* path
+works whether or not you installed ffmpeg system-wide. Only the standalone
+check below depends on your PATH.
 
 ### Verify standalone before wiring it up
 
@@ -252,14 +299,23 @@ overlay all fall back to the drawn avatar and the lesson plays normally.
 
 ---
 
-## 6. Performance on a 4050
+## 6. Performance on a 4050 (measured)
 
-SadTalker generates every frame, so budget **1-4 minutes per scene** at
-`crop`/256 on a 6 GB mobile card. A 7-scene lesson plus two repair scenes is a
-coffee break, not a demo-time operation.
+Measured on an RTX 4050 Laptop (6 GB) at `crop`/256/`--still`:
 
-Warm the cache before presenting - the web client already fires this when a
-lesson starts:
+| Step | Time |
+| --- | --- |
+| SadTalker, ~10s of narration | **~17 s** |
+| Full GuruFlow scene (Manim + TTS + SadTalker + composite + mux) | **~115 s** |
+| A 7-scene lesson plus 2 repair scenes | **~15-20 min** |
+
+VRAM stayed within the 6 GB budget throughout; nothing had to be closed.
+
+This is faster than the "1-4 minutes per scene" earlier drafts of this document
+estimated - most of the 115 s is Manim rendering, not SadTalker.
+
+Warm the cache before presenting; the web client fires this when a lesson
+starts:
 
 ```bash
 curl -X POST http://127.0.0.1:8077/lessons/<LESSON_ID>/video/prerender
@@ -267,8 +323,6 @@ curl -X POST http://127.0.0.1:8077/lessons/<LESSON_ID>/video/prerender
 
 While tuning `expression_scale`, iterate on one scene with
 `GURUFLOW_VIDEO_QUALITY=low` rather than re-rendering the whole lesson.
-
----
 
 ## 7. Honest limitations
 

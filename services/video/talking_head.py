@@ -177,6 +177,43 @@ def _newest_result(results_dir: Path) -> Path | None:
     return max(videos, key=lambda p: p.stat().st_mtime)
 
 
+
+def _subprocess_env() -> dict[str, str]:
+    """Environment for SadTalker, guaranteed to have `ffmpeg` on PATH.
+
+    SadTalker's `save_video_with_watermark` shells out to a bare `ffmpeg`, so
+    without it on PATH the model runs to completion and then dies on the final
+    mux - having burned the whole render. GuruFlow ships `imageio-ffmpeg`, but
+    its binary is named `ffmpeg-win-x86_64-v7.1.exe`, so putting that directory
+    on PATH does not satisfy a bare `ffmpeg` call.
+
+    If nothing resolves, a directory containing a correctly-named copy is
+    materialised once and prepended. That way the integration does not depend
+    on the operator having installed ffmpeg system-wide.
+    """
+    env = dict(os.environ)
+
+    if shutil.which("ffmpeg", path=env.get("PATH", "")):
+        return env
+
+    from services.ffmpeg_util import ffmpeg_path
+
+    binary = ffmpeg_path()
+    if binary is None:
+        logger.warning("No ffmpeg available; SadTalker will fail at the mux step.")
+        return env
+
+    shim_dir = Path(tempfile.gettempdir()) / "guruflow_ffmpeg_shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    shim = shim_dir / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+    if not shim.exists():
+        shutil.copy2(binary, shim)
+        logger.info("Created ffmpeg shim for SadTalker at %s", shim)
+
+    env["PATH"] = f"{shim_dir}{os.pathsep}{env.get('PATH', '')}"
+    return env
+
+
 def generate(audio_path: Path, cache_dir: Path) -> Path | None:
     """Animate the teacher portrait so it speaks the given narration.
 
@@ -225,6 +262,7 @@ def generate(audio_path: Path, cache_dir: Path) -> Path | None:
             completed = subprocess.run(
                 command,
                 cwd=str(cfg.sadtalker_dir),
+                env=_subprocess_env(),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 timeout=_INFERENCE_TIMEOUT_SECONDS,
