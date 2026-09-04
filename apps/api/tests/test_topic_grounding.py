@@ -207,3 +207,68 @@ def test_llm_scenes_off_material_stay_honestly_ungrounded():
     grounded = _ground_llm_scenes(scenes, material)
     assert grounded[0]["citations"] == []
     assert grounded[0]["groundingStatus"] == "general_knowledge"
+
+
+# ---------------------------------------------------------------------------
+# The refusal must name the real obstacle
+# ---------------------------------------------------------------------------
+
+
+def _narration(language="english", **llm_state):
+    """Render the refusal with services.llm in a given state."""
+    from services import llm
+    from services.planner import _unsupported_topic_narration
+
+    original_available = llm.gemini_available
+    original_reason = getattr(llm, "last_failure_reason", None)
+    try:
+        llm.gemini_available = lambda: llm_state.get("available", False)
+        llm.last_failure_reason = llm_state.get("reason")
+        return _unsupported_topic_narration(language)
+    finally:
+        llm.gemini_available = original_available
+        llm.last_failure_reason = original_reason
+
+
+def test_no_key_asks_for_a_key():
+    text = _narration(available=False)
+    assert "API key" in text
+
+
+def test_exhausted_quota_does_not_ask_for_a_key_the_user_already_has():
+    """The bug: a spent quota told the learner to switch on a key they had.
+
+    That sends them hunting for a configuration problem that does not exist.
+    """
+    text = _narration(available=True, reason="quota")
+    assert "switch on an LLM API key" not in text
+    assert "daily request limit" in text
+    assert "resets" in text
+
+
+def test_an_unreachable_model_says_so_rather_than_blaming_configuration():
+    text = _narration(available=True, reason="busy")
+    assert "could not\nreach" in text or "could not reach" in text
+    assert "switch on an LLM API key" not in text
+
+
+def test_every_language_distinguishes_the_two_cases():
+    for language in ("english", "hindi", "hinglish"):
+        no_key = _narration(language, available=False)
+        quota = _narration(language, available=True, reason="quota")
+        assert no_key != quota, f"{language} gives the same message for both"
+        assert quota.strip()
+
+
+def test_an_unknown_language_still_gets_a_real_message():
+    text = _narration("klingon", available=True, reason="quota")
+    assert "daily request limit" in text
+
+
+def test_an_upload_is_never_told_to_upload_something():
+    from services.ingestion import ingest_text
+    from services.planner import _unsupported_topic_narration
+
+    material = ingest_text("Some off-catalogue prose about gradient descent.", "notes")
+    text = _unsupported_topic_narration("english", material)
+    assert "Upload a document" not in text

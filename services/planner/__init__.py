@@ -415,36 +415,107 @@ _UPLOADED_OFF_CATALOGUE = {
 }
 
 
+# Why the LLM could not help, in the learner's language. The distinction
+# matters: "add a key" is useless advice to someone who already has one, and
+# sends them hunting for a configuration problem that does not exist.
+_LLM_QUOTA_SPENT = {
+    "english": (
+        "I don't have curated material for this topic offline, and the LLM key "
+        "has hit its daily request limit - it resets each day. Upload a "
+        "document and I can teach this right now, or try again tomorrow."
+    ),
+    "hinglish": (
+        "Is topic ke liye offline curated content nahi hai, aur LLM key ki "
+        "aaj ki request limit khatam ho gayi hai - yeh roz reset hoti hai. "
+        "Document upload karo toh main abhi padha sakti hoon, ya kal try karo."
+    ),
+    "hindi": (
+        "इस विषय के लिए offline सामग्री नहीं है, और LLM key की आज की request "
+        "सीमा समाप्त हो गई है - यह रोज़ reset होती है। कोई document अपलोड करें "
+        "तो मैं अभी पढ़ा सकती हूँ, या कल पुनः प्रयास करें।"
+    ),
+}
+
+_LLM_UNREACHABLE = {
+    "english": (
+        "I don't have curated material for this topic offline, and I could not "
+        "reach the language model just now. Upload a document and I can teach "
+        "this immediately, or try again in a moment."
+    ),
+    "hinglish": (
+        "Is topic ke liye offline curated content nahi hai, aur abhi language "
+        "model tak pahunch nahi paayi. Document upload karo toh main turant "
+        "padha sakti hoon, ya thodi der baad try karo."
+    ),
+    "hindi": (
+        "इस विषय के लिए offline सामग्री नहीं है, और अभी language model तक "
+        "पहुँच नहीं हो पाई। कोई document अपलोड करें तो मैं तुरंत पढ़ा सकती हूँ, "
+        "या थोड़ी देर बाद प्रयास करें।"
+    ),
+}
+
+_NO_LLM_KEY = {
+    "english": (
+        "I don't have curated, source-grounded material for this topic in "
+        "offline mode yet. Upload a document, or switch on an LLM API key, "
+        "and I'll teach it properly."
+    ),
+    "hinglish": (
+        "Is topic ke liye mere paas abhi offline mode mein curated, "
+        "source-grounded content nahi hai. Ek document upload karo, ya LLM "
+        "API key on karo, tab main ise sahi tarike se padha sakta hoon."
+    ),
+    "hindi": (
+        "इस विषय के लिए मेरे पास अभी offline मोड में curated, "
+        "source-grounded सामग्री नहीं है। कोई document अपलोड करें, या LLM "
+        "API key चालू करें, तब मैं इसे सही तरीके से पढ़ा सकता हूँ।"
+    ),
+}
+
+
+def _llm_refusal_reason() -> str:
+    """Classify why the LLM did not produce a lesson: quota / unreachable / none.
+
+    Read from services.llm rather than guessed, so the learner is never told to
+    configure something that is already configured.
+    """
+    try:
+        from services import llm
+    except Exception:  # noqa: BLE001 - absent LLM module means no key
+        return "none"
+
+    if not llm.gemini_available():
+        return "none"
+    reason = getattr(llm, "last_failure_reason", None)
+    if reason == "quota":
+        return "quota"
+    if reason in ("busy", "unavailable"):
+        return "unreachable"
+    return "unreachable" if reason else "none"
+
+
 def _unsupported_topic_narration(
     language: str, material: Material | None = None
 ) -> str:
     """Honest, help-not-mislead message for a topic we cannot yet teach offline.
 
-    Two distinct cases, because the right next step differs: a learner who has
-    uploaded a document should not be told to upload a document.
+    Several distinct cases, because the right next step differs each time. A
+    learner who has uploaded a document should not be told to upload one, and a
+    learner whose key is merely out of quota should not be told to add a key -
+    that sends them looking for a broken configuration instead of waiting a day
+    or uploading a source.
     """
     if material is not None and material.origin == "upload":
         return _UPLOADED_OFF_CATALOGUE.get(
             language, _UPLOADED_OFF_CATALOGUE["english"]
         )
 
+    reason = _llm_refusal_reason()
     messages = {
-        "english": (
-            "I don't have curated, source-grounded material for this topic in "
-            "offline mode yet. Upload a document, or switch on an LLM API key, "
-            "and I'll teach it properly."
-        ),
-        "hinglish": (
-            "Is topic ke liye mere paas abhi offline mode mein curated, "
-            "source-grounded content nahi hai. Ek document upload karo, ya LLM "
-            "API key on karo, tab main ise sahi tarike se padha sakta hoon."
-        ),
-        "hindi": (
-            "इस विषय के लिए मेरे पास अभी offline मोड में curated, "
-            "source-grounded सामग्री नहीं है। कोई document अपलोड करें, या LLM "
-            "API key चालू करें, तब मैं इसे सही तरीके से पढ़ा सकता हूँ।"
-        ),
-    }
+        "quota": _LLM_QUOTA_SPENT,
+        "unreachable": _LLM_UNREACHABLE,
+        "none": _NO_LLM_KEY,
+    }[reason]
     # Guard against an unexpected language code: fall back to the English
     # narration, not the literal string "english".
     return messages.get(language, messages["english"])
