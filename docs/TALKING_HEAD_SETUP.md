@@ -145,26 +145,38 @@ binary - but SadTalker calls `ffmpeg` from PATH.
 
 ### Checkpoints
 
-```bash
-cd C:\SadTalker && download_models.bat
+**The repo has no `download_models.bat`**, and `scripts/download_models.sh`
+uses `wget`, which Windows does not ship (Git Bash has `curl`, not `wget`). So
+fetch the weights with PowerShell instead - same URLs the script uses:
+
+```powershell
+cd C:\SadTalker; mkdir -Force checkpoints, gfpgan\weights | Out-Null; $base="https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2-rc"; @{"checkpoints\mapping_00109-model.pth.tar"="$base/mapping_00109-model.pth.tar";"checkpoints\mapping_00229-model.pth.tar"="$base/mapping_00229-model.pth.tar";"checkpoints\SadTalker_V0.0.2_256.safetensors"="$base/SadTalker_V0.0.2_256.safetensors";"gfpgan\weights\alignment_WFLW_4HG.pth"="https://github.com/xinntao/facexlib/releases/download/v0.1.0/alignment_WFLW_4HG.pth";"gfpgan\weights\detection_Resnet50_Final.pth"="https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth";"gfpgan\weights\parsing_parsenet.pth"="https://github.com/xinntao/facexlib/releases/download/v0.2.2/parsing_parsenet.pth"}.GetEnumerator() | ForEach-Object { if (!(Test-Path $_.Key)) { Write-Host "downloading $($_.Key)"; Invoke-WebRequest $_.Value -OutFile $_.Key } }
 ```
 
-On Linux/macOS: `bash scripts/download_models.sh`. The script uses `curl`/
-`wget`, not Python, so it does not need the venv.
+That is everything needed for the low-VRAM path. Two deliberate omissions:
 
-Expected layout:
+* `SadTalker_V0.0.2_512.safetensors` - only used at `--size 512`, which does not
+  fit comfortably in 6 GB and renders detail a ~248 px panel cannot show.
+* `GFPGANv1.4.pth` - only used with `--enhancer gfpgan`, which is off by
+  default here. Add it if you turn the enhancer on.
+
+`detection_Resnet50_Final.pth` and `parsing_parsenet.pth` live under `gfpgan/`
+but are **face detection and parsing**, used on every run regardless of the
+enhancer. They are not optional.
+
+Expected layout afterwards:
 
 ```
-./checkpoints/
-├── mapping_00109-model.pth.tar
-├── mapping_00229-model.pth.tar
-├── SadTalker_V0.0.2_256.safetensors
-└── SadTalker_V0.0.2_512.safetensors
-./gfpgan/weights/          <- only needed if you enable the enhancer
+C:\SadTalker\
+├── checkpoints\
+│   ├── mapping_00109-model.pth.tar
+│   ├── mapping_00229-model.pth.tar
+│   └── SadTalker_V0.0.2_256.safetensors
+└── gfpgan\weights\
+    ├── alignment_WFLW_4HG.pth
+    ├── detection_Resnet50_Final.pth
+    └── parsing_parsenet.pth
 ```
-
-If the scripts fail behind a proxy, the same files are on the SadTalker
-Hugging Face repo; place them by hand.
 
 ### Verify standalone before wiring it up
 
