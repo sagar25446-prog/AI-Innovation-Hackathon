@@ -136,6 +136,11 @@ def health() -> dict[str, Any]:
         "service": "guruflow-teacher-brain",
         "mode": "deterministic" if not gemini_available() else "llm-enhanced",
         "gemini": gemini_available(),
+        # Why the last LLM attempt fell back, so "it silently used the
+        # deterministic path" is diagnosable without reading server logs.
+        "llmFailureReason": getattr(
+            __import__("services.llm", fromlist=["last_failure_reason"]),
+            "last_failure_reason", None),
         "rag": rag_status(),
         "video": video_service.cache_stats(),
     }

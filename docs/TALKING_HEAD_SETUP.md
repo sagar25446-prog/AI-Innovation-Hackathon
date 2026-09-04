@@ -58,27 +58,126 @@ One still image. That is the whole asset list.
 720p frame, and SadTalker runs at 256x256 in the low-VRAM configuration, so
 extra resolution is thrown away.
 
+### Check it before you render
+
+A scene takes about two minutes; a portrait SadTalker cannot align fails at the
+first step. `tools/check_portrait.py` runs SadTalker's *own* detection and
+cropping, so a pass means the real render will accept it:
+
+```bash
+C:\SadTalker\.venv\Scripts\python.exe tools\check_portrait.py C:\path\to\teacher.png
+```
+
+It reports resolution, whether a face was found, and the detected face size,
+then writes a `*_sadtalker_crop.png` preview beside your image. **Open that
+preview** - it is what the teacher panel will actually show, and a portrait
+that passes detection can still be badly framed.
+
+Run it with **SadTalker's** interpreter, not GuruFlow's: it needs `cv2` and the
+checkpoints. It also runs inside the SadTalker directory on purpose, because
+facexlib downloads its weights relative to the working directory and would
+otherwise drop ~290 MB wherever you happened to be.
+
 ---
 
 ## 3. Install SadTalker
 
-In its **own** environment - SadTalker pins torch and face-detection versions
-that will fight with the API's dependencies.
+In its **own** environment. SadTalker pins torch and face-detection versions
+that will fight with the API's dependencies, so it never shares an interpreter
+with GuruFlow.
+
+### You need Python 3.10 specifically
+
+SadTalker's pinned torch and numpy have **no wheels for Python 3.11+**. If your
+default is 3.12 (GuruFlow's is, and that is fine) install 3.10 alongside it -
+they coexist happily and the `py` launcher keeps them apart:
 
 ```bash
-git clone https://github.com/OpenTalker/SadTalker.git
-cd SadTalker
-conda create -n sadtalker python=3.10 -y
-conda activate sadtalker
+winget install Python.Python.3.10
 ```
 
-**Install CUDA torch first.** `pip install -r requirements.txt` on its own
-pulls a CPU-only build and SadTalker then runs at a crawl:
+Confirm it registered before continuing. `py --list` should show `-V:3.10` as
+well as your default:
 
 ```bash
-pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
-pip install -r requirements.txt
+py --list
 ```
+
+### Create the environment with venv
+
+No conda required.
+
+```bash
+git clone https://github.com/OpenTalker/SadTalker.git C:\SadTalker
+```
+
+```bash
+cd C:\SadTalker && py -3.10 -m venv .venv
+```
+
+Check you actually got 3.10. This is the most common setup mistake, and every
+later error is downstream of it:
+
+```bash
+C:\SadTalker\.venv\Scripts\python --version
+```
+
+It must print `Python 3.10.x`. If it prints 3.12, the `py -3.10` did not take -
+fix that before installing anything.
+
+### Install CUDA torch FIRST
+
+`pip install -r requirements.txt` on its own pulls a **CPU-only** torch, and
+SadTalker then runs at a crawl while looking like it is working:
+
+Upgrade pip first, then use **`--extra-index-url`**, not `--index-url`:
+
+```bash
+C:\SadTalker\.venv\Scripts\python -m pip install --upgrade pip setuptools wheel
+```
+
+```bash
+C:\SadTalker\.venv\Scripts\python -m pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --extra-index-url https://download.pytorch.org/whl/cu118
+```
+
+`--index-url` **replaces** PyPI rather than adding to it, so pip cannot find
+build dependencies that only live there and fails with
+`No matching distribution found for flit_core`. `--extra-index-url` keeps PyPI
+available. (Verified: `--index-url` fails on a clean 3.10 venv.)
+
+Verify CUDA is live before going further:
+
+```bash
+C:\SadTalker\.venv\Scripts\python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+```
+
+Expect `2.0.1+cu118 True`. **If it prints `False`, stop** - everything after
+this will run on CPU and take tens of minutes per scene instead of one or two.
+
+Then the rest:
+
+```bash
+C:\SadTalker\.venv\Scripts\python -m pip install -r C:\SadTalker\requirements.txt
+```
+
+**Let this finish.** It installs ~60 packages and downgrades numpy to 1.23.4.
+Interrupting it leaves a half-installed environment whose only symptom is
+`ModuleNotFoundError: No module named 'cv2'` much later.
+
+Then pin setuptools back:
+
+```bash
+C:\SadTalker\.venv\Scripts\python -m pip install "setuptools<81"
+```
+
+Setuptools 81 removed `pkg_resources`, which librosa 0.9.2 imports at module
+level. Without this, inference dies on
+`ModuleNotFoundError: No module named 'pkg_resources'`. The `--upgrade
+setuptools` in the previous step is what pulls in the version that breaks it.
+
+The venv is never "activated" here; every command calls its interpreter by full
+path. That is deliberate - it removes a whole class of "which python am I in"
+mistakes, and it is exactly what `GURUFLOW_SADTALKER_PYTHON` needs anyway.
 
 ### ffmpeg
 
@@ -92,31 +191,64 @@ binary - but SadTalker calls `ffmpeg` from PATH.
 
 ### Checkpoints
 
+**The repo has no `download_models.bat`**, and `scripts/download_models.sh`
+uses `wget`, which Windows does not ship (Git Bash has `curl`, not `wget`). So
+fetch the weights with PowerShell instead - same URLs the script uses:
+
+```powershell
+cd C:\SadTalker; mkdir -Force checkpoints, gfpgan\weights | Out-Null; $base="https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2-rc"; @{"checkpoints\mapping_00109-model.pth.tar"="$base/mapping_00109-model.pth.tar";"checkpoints\mapping_00229-model.pth.tar"="$base/mapping_00229-model.pth.tar";"checkpoints\SadTalker_V0.0.2_256.safetensors"="$base/SadTalker_V0.0.2_256.safetensors";"gfpgan\weights\alignment_WFLW_4HG.pth"="https://github.com/xinntao/facexlib/releases/download/v0.1.0/alignment_WFLW_4HG.pth";"gfpgan\weights\detection_Resnet50_Final.pth"="https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth";"gfpgan\weights\parsing_parsenet.pth"="https://github.com/xinntao/facexlib/releases/download/v0.2.2/parsing_parsenet.pth"}.GetEnumerator() | ForEach-Object { if (!(Test-Path $_.Key)) { Write-Host "downloading $($_.Key)"; Invoke-WebRequest $_.Value -OutFile $_.Key } }
+```
+
+That is everything needed for the low-VRAM path. Two deliberate omissions:
+
+* `SadTalker_V0.0.2_512.safetensors` - only used at `--size 512`, which does not
+  fit comfortably in 6 GB and renders detail a ~248 px panel cannot show.
+* `GFPGANv1.4.pth` - only used with `--enhancer gfpgan`, which is off by
+  default here. Add it if you turn the enhancer on.
+
+`detection_Resnet50_Final.pth` and `parsing_parsenet.pth` live under `gfpgan/`
+but are **face detection and parsing**, used on every run regardless of the
+enhancer. They are not optional.
+
+Expected layout afterwards:
+
+```
+C:\SadTalker\
+├── checkpoints\
+│   ├── mapping_00109-model.pth.tar
+│   ├── mapping_00229-model.pth.tar
+│   └── SadTalker_V0.0.2_256.safetensors
+└── gfpgan\weights\
+    ├── alignment_WFLW_4HG.pth
+    ├── detection_Resnet50_Final.pth
+    └── parsing_parsenet.pth
+```
+
+### ffmpeg must be on PATH for the standalone run
+
+SadTalker's final step shells out to a bare `ffmpeg` to mux audio onto the
+video. If it is not on PATH the model runs to completion and *then* dies with
+`FileNotFoundError: ... .mp4` - having burned the entire render.
+
+winget installs to a directory that is not on PATH until you open a new shell,
+so either restart the terminal after installing ffmpeg, or prepend it for the
+run:
+
 ```bash
-# Windows
-download_models.bat
-# Linux/macOS
-bash scripts/download_models.sh
+set PATH=%LOCALAPPDATA%\Microsoft\WinGet\Links;%PATH%
 ```
 
-Expected layout:
+Confirm before running: `ffmpeg -version` must print something.
 
-```
-./checkpoints/
-├── mapping_00109-model.pth.tar
-├── mapping_00229-model.pth.tar
-├── SadTalker_V0.0.2_256.safetensors
-└── SadTalker_V0.0.2_512.safetensors
-./gfpgan/weights/          <- only needed if you enable the enhancer
-```
-
-If the scripts fail behind a proxy, the same files are on the SadTalker
-Hugging Face repo; place them by hand.
+GuruFlow itself does not need this. `services/video/talking_head.py` puts a
+correctly-named ffmpeg on the subprocess PATH itself, so the *integrated* path
+works whether or not you installed ffmpeg system-wide. Only the standalone
+check below depends on your PATH.
 
 ### Verify standalone before wiring it up
 
 ```bash
-python inference.py --driven_audio examples/driven_audio/bus_chinese.wav --source_image examples/source_image/full_body_1.png --result_dir ./results --preprocess crop --size 256 --still
+cd C:\SadTalker && .venv\Scripts\python inference.py --driven_audio examples\driven_audio\bus_chinese.wav --source_image examples\source_image\full_body_1.png --result_dir .\results --preprocess crop --size 256 --still
 ```
 
 Get this working **first**. Debugging SadTalker through GuruFlow's subprocess
@@ -128,13 +260,14 @@ layer is far more painful than debugging it directly.
 
 ```bash
 set GURUFLOW_TALKING_HEAD=1
-set GURUFLOW_SADTALKER_DIR=C:\path\to\SadTalker
-set GURUFLOW_SADTALKER_PYTHON=C:\Users\you\miniconda3\envs\sadtalker\python.exe
+set GURUFLOW_SADTALKER_DIR=C:\SadTalker
+set GURUFLOW_SADTALKER_PYTHON=C:\SadTalker\.venv\Scripts\python.exe
 set GURUFLOW_TEACHER_PORTRAIT=C:\path\to\teacher.png
 ```
 
-`GURUFLOW_SADTALKER_PYTHON` must be the **sadtalker env's** interpreter - that
-is the entire point of the separate environment.
+`GURUFLOW_SADTALKER_PYTHON` must be the **venv's** interpreter
+(`C:\SadTalker\.venv\Scripts\python.exe`), not GuruFlow's. That is the entire
+point of the separate environment.
 
 Check it took:
 
@@ -186,14 +319,23 @@ overlay all fall back to the drawn avatar and the lesson plays normally.
 
 ---
 
-## 6. Performance on a 4050
+## 6. Performance on a 4050 (measured)
 
-SadTalker generates every frame, so budget **1-4 minutes per scene** at
-`crop`/256 on a 6 GB mobile card. A 7-scene lesson plus two repair scenes is a
-coffee break, not a demo-time operation.
+Measured on an RTX 4050 Laptop (6 GB) at `crop`/256/`--still`:
 
-Warm the cache before presenting - the web client already fires this when a
-lesson starts:
+| Step | Time |
+| --- | --- |
+| SadTalker, ~10s of narration | **~17 s** |
+| Full GuruFlow scene (Manim + TTS + SadTalker + composite + mux) | **~115 s** |
+| A 7-scene lesson plus 2 repair scenes | **~15-20 min** |
+
+VRAM stayed within the 6 GB budget throughout; nothing had to be closed.
+
+This is faster than the "1-4 minutes per scene" earlier drafts of this document
+estimated - most of the 115 s is Manim rendering, not SadTalker.
+
+Warm the cache before presenting; the web client fires this when a lesson
+starts:
 
 ```bash
 curl -X POST http://127.0.0.1:8077/lessons/<LESSON_ID>/video/prerender
@@ -201,8 +343,6 @@ curl -X POST http://127.0.0.1:8077/lessons/<LESSON_ID>/video/prerender
 
 While tuning `expression_scale`, iterate on one scene with
 `GURUFLOW_VIDEO_QUALITY=low` rather than re-rendering the whole lesson.
-
----
 
 ## 7. Honest limitations
 

@@ -40,6 +40,13 @@ _CONFIGURED_MODEL = os.environ.get("GURUFLOW_GEMINI_MODEL", "").strip()
 # "everything is busy" cause.
 _DEAD_MODELS: set[str] = set()
 
+# Why the last model resolution gave up: "quota", "busy", "unavailable", or
+# None when the last attempt succeeded. Callers swallow LLM failures and fall
+# back deterministically, which is right for the learner but hides *why* from
+# operators - and "out of quota" needs a different response from "the model is
+# retired". Surfaced in /health.
+last_failure_reason: str | None = None
+
 # Resolved lazily on first successful call, then reused.
 _MODEL_NAME: str | None = _CONFIGURED_MODEL or None
 
@@ -97,7 +104,7 @@ def _call_with_model_fallback(call, rounds: int = 2):
     Two rounds with a short pause between them is enough to ride out the brief
     demand spikes Gemini Flash sees, without stalling a lesson for long.
     """
-    global _MODEL_NAME
+    global _MODEL_NAME, last_failure_reason
 
     if _MODEL_NAME:
         try:
@@ -145,6 +152,7 @@ def _call_with_model_fallback(call, rounds: int = 2):
                 last_error = exc
                 continue
             _MODEL_NAME = name
+            last_failure_reason = None
             logger.info("Using Gemini model: %s", name)
             return result
 
@@ -157,8 +165,12 @@ def _call_with_model_fallback(call, rounds: int = 2):
             break
 
     if last_error:
+        last_failure_reason = (
+            "quota" if _is_quota_exhausted(last_error) else "busy"
+        )
         raise last_error
     if last_skip_error:
+        last_failure_reason = "unavailable"
         raise last_skip_error
     raise RuntimeError("No Gemini model candidates were configured.")
 

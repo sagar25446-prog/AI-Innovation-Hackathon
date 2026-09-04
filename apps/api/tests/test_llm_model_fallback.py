@@ -223,29 +223,20 @@ def test_normalisation_of_an_empty_plan_is_safe():
 # ---------------------------------------------------------------------------
 
 
-def _skip_if_llm_unusable():
-    """Skip rather than fail when the model is reachable but unusable.
+def _skip_if_llm_was_unusable():
+    """Skip when the LLM could not be reached, rather than reporting a bug.
 
-    A spent daily quota is an account state, not a regression, and a red suite
-    for it would train everyone to ignore this test.
+    Deliberately checked *after* the call, not before: a pre-flight probe costs
+    a request, and on a nearly-spent free tier that probe can consume the very
+    last one - turning "nearly out of quota" into a failure it caused itself.
     """
-    client = llm._get_gemini_client()
-    if client is None:
-        pytest.skip("Gemini client unavailable (no key, or SDK missing)")
-
-    try:
-        llm._call_with_model_fallback(
-            lambda model: client.models.generate_content(
-                model=model, contents="ping", config={"temperature": 0}
-            ),
-            rounds=1,
-        )
-    except Exception as exc:  # noqa: BLE001 - classify, then decide
-        if llm._is_quota_exhausted(exc):
-            pytest.skip("Gemini free-tier quota exhausted (20 requests/model/day)")
-        if llm._is_transient(exc):
-            pytest.skip(f"Gemini temporarily unavailable: {str(exc)[:80]}")
-        raise
+    reason = llm.last_failure_reason
+    if reason == "quota":
+        pytest.skip("Gemini free-tier quota exhausted (20 requests/model/day)")
+    if reason == "busy":
+        pytest.skip("Gemini temporarily unavailable (503)")
+    if reason == "unavailable":
+        pytest.skip("No usable Gemini model for this key")
 
 
 @pytest.mark.live_llm
@@ -253,7 +244,6 @@ def test_live_off_catalogue_topic_is_actually_taught():
     from services.ingestion import ingest_topic
     from services.planner import plan_lesson
 
-    _skip_if_llm_unusable()
     material = ingest_topic("Photosynthesis")
     plan = plan_lesson(
         {
@@ -265,6 +255,7 @@ def test_live_off_catalogue_topic_is_actually_taught():
         material,
         topic="Photosynthesis",
     )
+    _skip_if_llm_was_unusable()
 
     assert not plan.get("unsupportedTopic"), "an LLM-backed run should teach the topic"
     assert len(plan["scenes"]) > 1
