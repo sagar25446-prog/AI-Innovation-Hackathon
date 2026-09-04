@@ -62,23 +62,76 @@ extra resolution is thrown away.
 
 ## 3. Install SadTalker
 
-In its **own** environment - SadTalker pins torch and face-detection versions
-that will fight with the API's dependencies.
+In its **own** environment. SadTalker pins torch and face-detection versions
+that will fight with the API's dependencies, so it never shares an interpreter
+with GuruFlow.
+
+### You need Python 3.10 specifically
+
+SadTalker's pinned torch and numpy have **no wheels for Python 3.11+**. If your
+default is 3.12 (GuruFlow's is, and that is fine) install 3.10 alongside it -
+they coexist happily and the `py` launcher keeps them apart:
 
 ```bash
-git clone https://github.com/OpenTalker/SadTalker.git
-cd SadTalker
-conda create -n sadtalker python=3.10 -y
-conda activate sadtalker
+winget install Python.Python.3.10
 ```
 
-**Install CUDA torch first.** `pip install -r requirements.txt` on its own
-pulls a CPU-only build and SadTalker then runs at a crawl:
+Confirm it registered before continuing. `py --list` should show `-V:3.10` as
+well as your default:
 
 ```bash
-pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
-pip install -r requirements.txt
+py --list
 ```
+
+### Create the environment with venv
+
+No conda required.
+
+```bash
+git clone https://github.com/OpenTalker/SadTalker.git C:\SadTalker
+```
+
+```bash
+cd C:\SadTalker && py -3.10 -m venv .venv
+```
+
+Check you actually got 3.10. This is the most common setup mistake, and every
+later error is downstream of it:
+
+```bash
+C:\SadTalker\.venv\Scripts\python --version
+```
+
+It must print `Python 3.10.x`. If it prints 3.12, the `py -3.10` did not take -
+fix that before installing anything.
+
+### Install CUDA torch FIRST
+
+`pip install -r requirements.txt` on its own pulls a **CPU-only** torch, and
+SadTalker then runs at a crawl while looking like it is working:
+
+```bash
+C:\SadTalker\.venv\Scripts\python -m pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
+```
+
+Verify CUDA is live before going further:
+
+```bash
+C:\SadTalker\.venv\Scripts\python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+```
+
+Expect `2.0.1+cu118 True`. **If it prints `False`, stop** - everything after
+this will run on CPU and take tens of minutes per scene instead of one or two.
+
+Then the rest:
+
+```bash
+C:\SadTalker\.venv\Scripts\python -m pip install -r C:\SadTalker\requirements.txt
+```
+
+The venv is never "activated" here; every command calls its interpreter by full
+path. That is deliberate - it removes a whole class of "which python am I in"
+mistakes, and it is exactly what `GURUFLOW_SADTALKER_PYTHON` needs anyway.
 
 ### ffmpeg
 
@@ -93,11 +146,11 @@ binary - but SadTalker calls `ffmpeg` from PATH.
 ### Checkpoints
 
 ```bash
-# Windows
-download_models.bat
-# Linux/macOS
-bash scripts/download_models.sh
+cd C:\SadTalker && download_models.bat
 ```
+
+On Linux/macOS: `bash scripts/download_models.sh`. The script uses `curl`/
+`wget`, not Python, so it does not need the venv.
 
 Expected layout:
 
@@ -116,7 +169,7 @@ Hugging Face repo; place them by hand.
 ### Verify standalone before wiring it up
 
 ```bash
-python inference.py --driven_audio examples/driven_audio/bus_chinese.wav --source_image examples/source_image/full_body_1.png --result_dir ./results --preprocess crop --size 256 --still
+cd C:\SadTalker && .venv\Scripts\python inference.py --driven_audio examples\driven_audio\bus_chinese.wav --source_image examples\source_image\full_body_1.png --result_dir .\results --preprocess crop --size 256 --still
 ```
 
 Get this working **first**. Debugging SadTalker through GuruFlow's subprocess
@@ -128,13 +181,14 @@ layer is far more painful than debugging it directly.
 
 ```bash
 set GURUFLOW_TALKING_HEAD=1
-set GURUFLOW_SADTALKER_DIR=C:\path\to\SadTalker
-set GURUFLOW_SADTALKER_PYTHON=C:\Users\you\miniconda3\envs\sadtalker\python.exe
+set GURUFLOW_SADTALKER_DIR=C:\SadTalker
+set GURUFLOW_SADTALKER_PYTHON=C:\SadTalker\.venv\Scripts\python.exe
 set GURUFLOW_TEACHER_PORTRAIT=C:\path\to\teacher.png
 ```
 
-`GURUFLOW_SADTALKER_PYTHON` must be the **sadtalker env's** interpreter - that
-is the entire point of the separate environment.
+`GURUFLOW_SADTALKER_PYTHON` must be the **venv's** interpreter
+(`C:\SadTalker\.venv\Scripts\python.exe`), not GuruFlow's. That is the entire
+point of the separate environment.
 
 Check it took:
 
