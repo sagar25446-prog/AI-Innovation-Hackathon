@@ -756,3 +756,110 @@ tested, including `complete`.
 
 **3. Anatomical accuracy in diagrams / proportional timelines** - deliberately
 not attempted, documented as a caveat rather than left implied.
+
+---
+
+# ADDENDUM 2 - 2026-09-04: Gemini key verified, three real bugs found
+
+The key was added to `apps/api/.env.example` in commit `9d9cfe3` and pushed to
+`origin/main`.
+
+## SECURITY: the key is in git history and must be rotated
+
+`.env.example` is a **committed template**. The key is therefore in a pushed
+commit on `origin/main`, visible to anyone with repo access and to anything
+that has cloned or mirrored it. Removing it in a later commit does not remove
+it from history.
+
+**Rotate the key at <https://aistudio.google.com/apikey>.** That is the only
+effective remediation; everything below is hygiene.
+
+Actions taken:
+* Key removed from `.env.example` (now empty again) with an explicit warning.
+* Key written to `apps/api/.env`, which is gitignored and is **the only file
+  the app loads** - `main.py` calls `load_dotenv` on `.env`, never on
+  `.env.example`. So the key as committed was never being read at all.
+
+## The key works; my format guess was wrong
+
+I initially expected the `AIza…` (39 char) format and flagged `AQ.Ab8…` as
+suspect. Testing proved otherwise: it authenticates and lists 50 models. Google
+issues both formats. Corrected before it misled anyone.
+
+## Bug 1 - the default model is retired (planning silently disabled)
+
+`gemini-2.5-flash` returns **404 NOT_FOUND: "no longer available to new
+users"** for keys issued after its retirement. It still appears in ListModels,
+so the failure is invisible until a call is made. Effect: `generate_plan`
+returned `None` and every off-catalogue topic fell back to the "unsupported
+topic" refusal *even with a valid key*.
+
+Fixed with ordered candidates (`gemini-3.6-flash`, `gemini-flash-latest`,
+`gemini-3.5-flash`, `gemini-2.5-flash`), resolved on first use and remembered.
+Also handles:
+* **404** - permanent for this key; the model is never retried this process.
+* **503 / busy** - try the next model, then one retry round after 1.5s.
+* **429 / quota** - try the next model, but no second round; a daily cap will
+  not clear in 1.5 seconds.
+* anything else - propagates immediately, because a malformed request is not a
+  model problem and retrying would mask it.
+
+Error precedence also matters: a 404 names a model we deliberately skip, so the
+raised error now prefers "out of quota" or "busy" over it. Without that, the
+quota probe reported the wrong cause.
+
+`GURUFLOW_GEMINI_MODEL` still overrides everything.
+
+## Bug 2 - LLM lessons had no checkpoint (flagship loop dead off-catalogue)
+
+The prompt asks the model for `"isCheckpoint": true`, but `_normalise_llm_scenes`
+only copied `checkpointId` - so the flag was **silently dropped**. Every
+LLM-planned lesson therefore had no checkpoint, meaning no question, no
+misconception diagnosis and no repair scene on any topic outside the curated
+Electricity library. The product's flagship feature was inert wherever the LLM
+was doing the work.
+
+Fixed: `isCheckpoint` now maps to a real checkpoint id, and if a plan comes back
+with no checkpoint at all the penultimate scene is marked (penultimate so a
+closing scene still follows the question).
+
+## Bug 3 - the test suite became non-deterministic
+
+`main.py` loads `.env` at import, so once a real key existed the suite started
+calling the live model. Consequences: **different tests failed on consecutive
+runs**, runtime went from ~6s to **271s**, and the suite would pass for a
+teammate without a key and fail for one with a key.
+
+Fixed with `apps/api/tests/conftest.py`: the LLM is disabled for every test by
+default, and tests needing it opt in with `@pytest.mark.live_llm` (skipped when
+no key is configured). The suite is a deterministic-behaviour regression guard;
+it must not change meaning based on who is running it.
+
+## Verification
+
+| Check | Result |
+| --- | --- |
+| Key authenticates | yes - 50 models listed |
+| `/health` | `gemini: true`, `mode: llm-enhanced` |
+| **1a** off-catalogue topic (photosynthesis) | **7 real scenes**, on-topic, no Electricity leakage, `unsupportedTopic: false` |
+| **1b** upload outside the library | **NOT VERIFIED** - free-tier quota exhausted mid-run |
+| **1c** no-key honesty | still honest: refusal scene, no fabricated citations |
+| Suite | **195 passed, 2 skipped, 10.4s** (was 180) |
+
+**1b is blocked on quota, not on code.** The free tier allows **20 requests per
+model per day** and my verification runs spent it (`429 RESOURCE_EXHAUSTED`,
+`limit: 20`). The upload path is unit-tested; the live end-to-end confirmation
+needs quota. Re-run after reset:
+
+```
+python -m pytest apps/api/tests -q -m live_llm
+```
+
+It **skips** rather than fails when quota is spent, so it will not produce false
+alarms.
+
+## Remaining
+
+1. **Rotate the leaked key** (above). Then put the new one in `apps/api/.env`.
+2. Re-run the `live_llm` test once quota resets, to close 1b.
+3. Avatar clip files - unchanged.

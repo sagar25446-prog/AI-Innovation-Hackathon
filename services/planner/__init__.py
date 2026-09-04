@@ -292,9 +292,24 @@ def _normalise_llm_scenes(scenes: Any) -> list[dict[str, Any]]:
             "citations": citations,
             "groundingStatus": grounding,
         }
+        # The prompt asks the model for `"isCheckpoint": true`, so honour that
+        # as well as an explicit id. Without this the flag was silently dropped
+        # and no LLM-planned lesson ever had a checkpoint - which disables the
+        # misconception-repair loop on every topic outside the curated library.
         if scene.get("checkpointId"):
             normalised_scene["checkpointId"] = str(scene["checkpointId"])
+        elif scene.get("isCheckpoint"):
+            normalised_scene["checkpointId"] = CHECKPOINT_ID
         normalised.append(normalised_scene)
+
+    # A lesson with no checkpoint cannot adapt, so if the model did not mark
+    # one, make the penultimate scene the checkpoint rather than shipping a
+    # lecture. Penultimate keeps a closing scene after the question.
+    if normalised and not any(scene.get("checkpointId") for scene in normalised):
+        index = max(0, len(normalised) - 2)
+        normalised[index]["checkpointId"] = CHECKPOINT_ID
+        logger.info("LLM plan had no checkpoint; marked scene %s.", index + 1)
+
     return normalised
 
 
