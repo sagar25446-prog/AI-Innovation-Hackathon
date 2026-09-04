@@ -12,3 +12,8 @@ node_modules/
 # demo-assets/videos/ are committed (see demo-assets/README.md).
 media/
 *.log
+
+# facexlib downloads its weights relative to the working directory, so running
+# SadTalker tooling from the repo root drops ~290MB here.
+gfpgan/
+*_sadtalker_crop.png

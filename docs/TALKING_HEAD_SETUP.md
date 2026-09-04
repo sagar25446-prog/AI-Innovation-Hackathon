@@ -58,6 +58,26 @@ One still image. That is the whole asset list.
 720p frame, and SadTalker runs at 256x256 in the low-VRAM configuration, so
 extra resolution is thrown away.
 
+### Check it before you render
+
+A scene takes about two minutes; a portrait SadTalker cannot align fails at the
+first step. `tools/check_portrait.py` runs SadTalker's *own* detection and
+cropping, so a pass means the real render will accept it:
+
+```bash
+C:\SadTalker\.venv\Scripts\python.exe tools\check_portrait.py C:\path\to\teacher.png
+```
+
+It reports resolution, whether a face was found, and the detected face size,
+then writes a `*_sadtalker_crop.png` preview beside your image. **Open that
+preview** - it is what the teacher panel will actually show, and a portrait
+that passes detection can still be badly framed.
+
+Run it with **SadTalker's** interpreter, not GuruFlow's: it needs `cv2` and the
+checkpoints. It also runs inside the SadTalker directory on purpose, because
+facexlib downloads its weights relative to the working directory and would
+otherwise drop ~290 MB wherever you happened to be.
+
 ---
 
 ## 3. Install SadTalker
