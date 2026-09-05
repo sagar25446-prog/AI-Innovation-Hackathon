@@ -229,3 +229,57 @@ describe('interface conformance', () => {
     await assert.rejects(() => new AvatarProvider().generateAvatar('n', null, {}));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Narration must never overlap itself
+// ---------------------------------------------------------------------------
+
+describe('speech play tokens', () => {
+  /** Minimal stand-in for the token guard in ServerTTSProvider. */
+  class Speaker {
+    constructor() {
+      this._playToken = 0;
+      this.played = [];
+    }
+    stop() {
+      this._playToken += 1;
+    }
+    speak(label, resolveLater) {
+      this.stop();
+      const token = this._playToken;
+      return resolveLater().then(() => {
+        if (token !== this._playToken) return 'discarded';
+        this.played.push(label);
+        return 'played';
+      });
+    }
+  }
+
+  test('a response that arrives after a newer speak is discarded', async () => {
+    const s = new Speaker();
+    let releaseFirst;
+    const first = s.speak('hindi', () => new Promise((r) => { releaseFirst = r; }));
+    const second = s.speak('tamil', () => Promise.resolve());
+
+    await second;
+    releaseFirst();
+    assert.equal(await first, 'discarded');
+    assert.deepEqual(s.played, ['tamil'], 'only the newest narration may play');
+  });
+
+  test('stop() alone invalidates an in-flight response', async () => {
+    const s = new Speaker();
+    let release;
+    const pending = s.speak('hindi', () => new Promise((r) => { release = r; }));
+    s.stop();
+    release();
+    assert.equal(await pending, 'discarded');
+    assert.deepEqual(s.played, []);
+  });
+
+  test('an uninterrupted response still plays', async () => {
+    const s = new Speaker();
+    assert.equal(await s.speak('english', () => Promise.resolve()), 'played');
+    assert.deepEqual(s.played, ['english']);
+  });
+});

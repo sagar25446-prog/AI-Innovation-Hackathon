@@ -51,13 +51,14 @@ const MISCONCEPTION_EXPLAIN = {
  * Screen handling
  * ------------------------------------------------------------------ */
 
-const SCREENS = ['landing', 'onboarding', 'plan', 'classroom', 'report', 'profile'];
+const SCREENS = ['landing', 'why', 'onboarding', 'plan', 'classroom', 'report', 'profile'];
 
 function showScreen(name, opts = {}) {
   SCREENS.forEach((screen) => {
     $(`screen-${screen}`).hidden = screen !== name;
   });
-  $('restart-btn').hidden = name === 'onboarding' || name === 'landing';
+  $('restart-btn').hidden =
+    name === 'onboarding' || name === 'landing' || name === 'why';
   document.querySelectorAll('.nav-link').forEach((link) => {
     link.classList.toggle('active', link.dataset.nav === name);
   });
@@ -858,6 +859,11 @@ async function handleLanguageSwitch(event) {
   const keptIndex = state.sceneIndex;
   const repairScenes = state.scenes.filter((s) => s.isRepair);
 
+  // Silence the current narration before the await, not after it. Re-planning
+  // is a network round trip; without this the old language keeps talking
+  // throughout, and its audio overlapped the new one when it arrived.
+  stopTimer();
+
   try {
     const plan = await state.client.switchLanguage(state.plan.id, language);
     state.plan = plan;
@@ -1431,7 +1437,7 @@ function init() {
   // Landing + navigation.
   $('landing-start').addEventListener('click', goOnboarding);
   $('landing-cta-start').addEventListener('click', goOnboarding);
-  $('landing-closing-start').addEventListener('click', goOnboarding);
+  $('why-start').addEventListener('click', goOnboarding);
   $('landing-cta-how').addEventListener('click', () => {
     showScreen('landing');
     const section = $('landing-features');

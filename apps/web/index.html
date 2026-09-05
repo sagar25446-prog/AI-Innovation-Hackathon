@@ -20,9 +20,8 @@
 
   <nav class="nav-links" aria-label="Primary">
     <a href="#" data-nav="landing" class="nav-link">Home</a>
-    <a href="#" data-nav="onboarding" class="nav-link">Start learning</a>
     <a href="#" data-nav="landing-features" class="nav-link">How it works</a>
-    <a href="#" data-nav="landing" class="nav-link">Why GuruFlow</a>
+    <a href="#" data-nav="why" class="nav-link">Why GuruFlow</a>
   </nav>
 
   <div class="topbar-actions">
@@ -127,7 +126,95 @@
     <div class="landing-closing">
       <h2>Ready to learn it properly?</h2>
       <p>Start with the built-in Ohm's Law chapter, or bring your own material.</p>
-      <button id="landing-closing-start" class="btn btn-primary btn-lg" type="button">Build my lesson</button>
+    </div>
+  </section>
+
+
+  <!-- WHY GURUFLOW ------------------------------------------------------- -->
+  <section id="screen-why" class="screen" hidden>
+    <div class="why-head">
+      <p class="eyebrow">WHY GURUFLOW</p>
+      <h2>Most AI tutors answer questions.<br />This one notices what you got wrong.</h2>
+      <p class="lede">
+        Marking an answer incorrect tells a learner nothing they did not already
+        know. GuruFlow names the belief behind the mistake and teaches it again,
+        a different way.
+      </p>
+    </div>
+
+    <div class="why-grid">
+      <article class="why-card why-card-lead">
+        <span class="why-tag">The difference</span>
+        <h3>The lesson changes when you do</h3>
+        <p>
+          Answer the checkpoint wrongly and the lesson physically grows: a new
+          scene is written into it that attacks your specific misconception with
+          a different representation - the equation, an analogy, and a graph -
+          then re-asks the question.
+        </p>
+        <div class="why-proof">
+          <span class="why-before">7 scenes</span>
+          <span class="why-arrow">→</span>
+          <span class="why-after">8 scenes</span>
+          <span class="why-note">after one wrong answer</span>
+        </div>
+      </article>
+
+      <article class="why-card">
+        <span class="why-tag">Trust</span>
+        <h3>It shows its sources</h3>
+        <p>
+          Every scene cites the page it came from, and the Evidence drawer shows
+          the exact passage. When your material does not cover something, it says
+          so instead of inventing a citation.
+        </p>
+      </article>
+
+      <article class="why-card">
+        <span class="why-tag">Reach</span>
+        <h3>Fifteen teaching languages</h3>
+        <p>
+          English, Hindi and Hinglish are written by hand; twelve more are
+          localised on demand. Equations are never translated, so
+          <code>I = V/R</code> is identical in all of them.
+        </p>
+      </article>
+
+      <article class="why-card">
+        <span class="why-tag">Reliability</span>
+        <h3>The demo cannot fail</h3>
+        <p>
+          The built-in chapter runs with no API key, no network and no GPU.
+          Every optional part - the language model, the photoreal teacher, the
+          voice - degrades to something that still works.
+        </p>
+      </article>
+
+      <article class="why-card">
+        <span class="why-tag">Video</span>
+        <h3>Drawn, not dreamed</h3>
+        <p>
+          Animations are rendered programmatically rather than sampled from a
+          video model. A generative model cannot be trusted to draw a correct
+          circuit, and a plausible-but-wrong diagram would undo the grounding
+          everything else rests on.
+        </p>
+      </article>
+
+      <article class="why-card">
+        <span class="why-tag">Memory</span>
+        <h3>It remembers you</h3>
+        <p>
+          Mastery, weak concepts and resolved misconceptions persist between
+          lessons, and feed a spaced revision plan built around what you
+          actually struggled with.
+        </p>
+      </article>
+    </div>
+
+    <div class="why-cta">
+      <button id="why-start" class="btn btn-primary btn-lg" type="button">Try it on Ohm's Law</button>
+      <p class="why-cta-note">No account. Runs offline.</p>
     </div>
   </section>
 
