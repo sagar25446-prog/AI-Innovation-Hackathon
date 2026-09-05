@@ -693,3 +693,37 @@ def test_the_demo_button_does_not_overwrite_the_chosen_language():
         "loadDemoPreset touches the language control again; it must leave the "
         "learner's choice alone."
     )
+
+
+def test_the_video_cache_is_keyed_by_language_not_just_scene():
+    """Rendered videos carry muxed narration, so the key must include language.
+
+    Scene ids repeat across lessons - teaching Ohm's Law twice produces the
+    same `scene-1-intro-electricity` both times - so keying on the scene id
+    alone meant a second lesson in Tamil found the first lesson's Hinglish
+    video under that key and played it. It corrected itself on Next, because
+    later scenes had not been cached yet, which is exactly how the bug was
+    described.
+
+    Source-level, because the frontend has no DOM harness; it pins the access
+    pattern that caused the bug.
+    """
+    import re
+
+    source = (REPO_ROOT / "apps/web/src/app.js").read_text(encoding="utf-8")
+    assert "function videoKey(" in source, "videoKey helper is gone"
+
+    bare = re.findall(r"video\.byScene\.(?:get|set)\(\s*scene\.id", source)
+    assert not bare, (
+        f"{len(bare)} video.byScene access(es) key on scene.id alone; "
+        f"use videoKey(scene) so languages cannot collide."
+    )
+
+
+def test_restarting_clears_the_previous_lessons_video():
+    """Otherwise the old lesson's video is what shows while the new one renders."""
+    source = (REPO_ROOT / "apps/web/src/app.js").read_text(encoding="utf-8")
+    restart = source[source.index("function restart()") :]
+    restart = restart[: restart.index("\n}")]
+    assert "video.byScene.clear()" in restart
+    assert "removeAttribute('src')" in restart

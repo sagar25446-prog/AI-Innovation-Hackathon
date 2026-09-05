@@ -399,12 +399,37 @@ function stopVideoPolling() {
   }
 }
 
+/** The language the lesson is currently being taught in. */
+function currentLanguage() {
+  return (state.plan && state.plan.learner && state.plan.learner.language) || 'hinglish';
+}
+
+/**
+ * Cache key for a rendered scene video.
+ *
+ * Scene ids repeat across lessons - teaching Ohm's Law twice produces the same
+ * `scene-1-intro-electricity` both times - and a rendered video is specific to
+ * a language, because the narration is muxed into it. Keying on the scene id
+ * alone meant a second lesson in Tamil found the first lesson's Hinglish video
+ * already sitting under that key and played it. The learner saw scene one in
+ * the previous language, then everything corrected itself on Next, because
+ * later scenes had not been cached yet.
+ */
+function videoKey(scene) {
+  return `${scene.id}::${currentLanguage()}`;
+}
+
 /** Ask for this scene's video and watch for it becoming ready. */
 function ensureSceneVideo(scene) {
   stopVideoPolling();
-  const cached = video.byScene.get(scene.id);
+  const key = videoKey(scene);
+  // Captured now: a slow render must not be applied after the learner has
+  // switched language, or it lands as the wrong language's video.
+  const requestedLanguage = currentLanguage();
+
+  const cached = video.byScene.get(key);
   if (cached && cached.status === 'ready') {
-    applySceneVideo(scene, cached);
+    applySceneVideo(scene, cached, requestedLanguage);
     return;
   }
 
@@ -412,9 +437,9 @@ function ensureSceneVideo(scene) {
   requestSceneVideo(scene)
     .then((info) => {
       video.available = true;
-      video.byScene.set(scene.id, info);
+      video.byScene.set(key, info);
       if (info.status === 'ready') {
-        applySceneVideo(scene, info);
+        applySceneVideo(scene, info, requestedLanguage);
         return;
       }
       // Poll until the background render lands.
@@ -424,8 +449,10 @@ function ensureSceneVideo(scene) {
           const next = await res.json();
           if (next.status === 'ready') {
             stopVideoPolling();
-            video.byScene.set(scene.id, next);
-            if (currentScene().id === scene.id) applySceneVideo(scene, next);
+            video.byScene.set(key, next);
+            if (currentScene().id === scene.id) {
+              applySceneVideo(scene, next, requestedLanguage);
+            }
           } else if (String(next.status).startsWith('failed')) {
             stopVideoPolling();
             setVideoButton('absent');
@@ -443,8 +470,10 @@ function ensureSceneVideo(scene) {
     });
 }
 
-function applySceneVideo(scene, info) {
+function applySceneVideo(scene, info, requestedLanguage) {
   if (currentScene().id !== scene.id) return;
+  // A render that started before a language switch must not be shown after it.
+  if (requestedLanguage && requestedLanguage !== currentLanguage()) return;
   setVideoButton('ready');
   updateMediaBadge(scene, state.lastMedia);
   const player = $('lesson-video');
@@ -654,7 +683,9 @@ function updateMediaBadge(scene, mediaResult) {
   if (!status) return;
 
   const meta = (mediaResult && mediaResult.metadata) || {};
-  const sceneVideo = video.byScene.get(scene.id);
+  // Keyed by language too, or the badge claims "teaching video ready" on the
+  // strength of a video rendered for a language the learner has left.
+  const sceneVideo = video.byScene.get(videoKey(scene));
   const videoReady = sceneVideo && sceneVideo.status === 'ready';
 
   if (videoReady) {
@@ -1502,6 +1533,22 @@ function restart() {
   state.scenes = [];
   state.sceneIndex = 0;
   state.checkpointIndex = null;
+
+  // Drop the previous lesson's rendered videos. The cache is keyed by
+  // scene id *and* language so a stale one can no longer be served, but the
+  // player itself still holds the last lesson's file, and leaving it there
+  // means the old video is what shows while the new one renders.
+  stopVideoPolling();
+  video.byScene.clear();
+  video.enabled = false;
+  const player = $('lesson-video');
+  if (player) {
+    player.pause();
+    player.removeAttribute('src');
+    delete player.dataset.videoId;
+    player.load();
+  }
+
   showScreen('landing');
   state.client.detectMode().then(setModeBadge);
 }
