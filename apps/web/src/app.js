@@ -641,31 +641,60 @@ function runCaptions(scene, captions) {
 }
 
 /** Split narration into word tokens, treating maths like "V = I x R" as one unit. */
+/**
+ * One karaoke token: a word in any script, or a standalone operator.
+ *
+ * The `u` flag and the `\p{...}` classes are the whole point. This was
+ * `/\b[\w’']+|.../gi`, and in JavaScript `\w` means `[A-Za-z0-9_]` - ASCII
+ * only, no matter what text you hand it. Against Malayalam narration it
+ * matched nothing but the Latin fragments of "V = I x R", and since
+ * renderKaraoke rebuilds the caption out of the matches, every Malayalam
+ * character was silently dropped and the caption box came up empty. The same
+ * was true of all thirteen non-Latin languages the moment karaoke started.
+ *
+ * `\p{M}` matters as much as `\p{L}` here: Indic scripts carry vowel signs and
+ * viramas as combining marks, and a token class without them would cut words
+ * apart mid-cluster.
+ */
+const CAPTION_TOKEN = /[\p{L}\p{N}][\p{L}\p{M}\p{N}'’_]*|[=×÷·]+|Ω/gu;
+
 function captionToWords(text) {
-  const match = text.match(/\b[\w’\']+|\b[VvIRr]\s*[=×÷·]\s*[VvIRr]\b|[=×÷·]+|\bΩ\b/gi);
-  return match || [];
+  return (text || '').match(CAPTION_TOKEN) || [];
 }
 
 /** Render a caption with an index of "spoken so far" words highlighted. */
 function renderKaraoke(box, text, spokenUpTo, tokens) {
-  if (tokens && tokens.length && tokens.length < 120) {
-    let seen = 0;
-    const node = document.createElement('div');
-    node.className = 'caption-karaoke';
-    text.replace(/\b[\w’\']+|\b[VvIRr]\s*[=×÷·]\s*[VvIRr]\b|[=×÷·]+|\bΩ\b/gi, (tok) => {
-      const span = document.createElement('span');
-      span.className = seen < spokenUpTo ? 'is-spoken' : '';
-      span.textContent = tok;
-      seen += 1;
-      node.appendChild(span);
-      node.appendChild(document.createTextNode(' '));
-      return tok;
-    });
-    box.textContent = '';
-    box.appendChild(node);
-  } else {
+  if (!tokens || !tokens.length || tokens.length >= 120) {
     box.textContent = text;
+    return;
   }
+
+  const node = document.createElement('div');
+  node.className = 'caption-karaoke';
+
+  // Walk the caption and keep everything, highlighting only the tokens. The
+  // old version appended matches joined by a single space, which threw away
+  // punctuation, original spacing, and - for any non-Latin script - the text
+  // itself.
+  let cursor = 0;
+  let seen = 0;
+  for (const match of text.matchAll(CAPTION_TOKEN)) {
+    if (match.index > cursor) {
+      node.appendChild(document.createTextNode(text.slice(cursor, match.index)));
+    }
+    const span = document.createElement('span');
+    span.className = seen < spokenUpTo ? 'is-spoken' : '';
+    span.textContent = match[0];
+    node.appendChild(span);
+    cursor = match.index + match[0].length;
+    seen += 1;
+  }
+  if (cursor < text.length) {
+    node.appendChild(document.createTextNode(text.slice(cursor)));
+  }
+
+  box.textContent = '';
+  box.appendChild(node);
 }
 
 

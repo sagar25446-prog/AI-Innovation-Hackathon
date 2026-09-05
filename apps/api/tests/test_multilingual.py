@@ -727,3 +727,43 @@ def test_restarting_clears_the_previous_lessons_video():
     restart = restart[: restart.index("\n}")]
     assert "video.byScene.clear()" in restart
     assert "removeAttribute('src')" in restart
+
+
+def test_the_caption_tokenizer_is_unicode_aware():
+    """Captions must survive karaoke rendering in every script.
+
+    `captionToWords` used `/\b[\w'’]+/gi`, and in JavaScript `\w` is
+    `[A-Za-z0-9_]` - ASCII only, whatever text you give it. Against Malayalam
+    narration it matched nothing but the Latin fragments of "V = I x R", and
+    because renderKaraoke rebuilds the caption out of its matches, every
+    Malayalam character was dropped and the caption box came up empty. The
+    same held for all thirteen non-Latin languages once karaoke started.
+
+    `\p{M}` is as important as `\p{L}`: Indic scripts carry vowel signs and
+    viramas as combining marks, and a class without them splits clusters.
+    """
+    import re
+
+    source = (REPO_ROOT / "apps/web/src/app.js").read_text(encoding="utf-8")
+    token = re.search(r"const CAPTION_TOKEN = (/.+/[a-z]*);", source)
+    assert token, "CAPTION_TOKEN is gone from app.js"
+    pattern = token.group(1)
+
+    assert pattern.endswith("gu") or "u" in pattern.rsplit("/", 1)[1], (
+        "CAPTION_TOKEN needs the 'u' flag or \p{...} classes do not apply"
+    )
+    assert r"\p{L}" in pattern, "no Unicode letter class"
+    assert r"\p{M}" in pattern, "no combining-mark class; Indic clusters will split"
+    assert r"\w" not in pattern, "ASCII-only \w is back in the caption tokenizer"
+
+
+def test_karaoke_rendering_does_not_discard_untokenised_text():
+    """The renderer must keep punctuation and any character it did not match."""
+    source = (REPO_ROOT / "apps/web/src/app.js").read_text(encoding="utf-8")
+    body = source[source.index("function renderKaraoke(") :]
+    body = body[: body.index("\n}\n")]
+    assert "matchAll" in body, "renderKaraoke no longer walks the string"
+    assert "createTextNode(text.slice(" in body, (
+        "renderKaraoke is not re-emitting the gaps between tokens, so anything "
+        "it fails to match is silently dropped from the caption."
+    )
