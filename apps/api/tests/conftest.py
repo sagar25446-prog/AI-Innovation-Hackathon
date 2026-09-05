@@ -14,6 +14,13 @@ starts calling the live model. That is bad in three separate ways:
 So the LLM is disabled for every test by default. Tests that genuinely need the
 live model opt in with ``@pytest.mark.live_llm`` and are skipped when no key is
 configured.
+
+The same reasoning applies to the public MT translation engine added alongside
+it: it reaches the network, so leaving it on made the suite depend on internet
+access and on a third party's uptime. It is disabled by default too, and tests
+that want it opt in with ``@pytest.mark.live_mt``. What remains enabled is the
+shipped translation pack, which is committed to the repo and therefore exactly
+as deterministic as the code it ships with.
 """
 
 from __future__ import annotations
@@ -35,6 +42,10 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
         "live_llm: test needs a real Gemini key; skipped when none is configured.",
+    )
+    config.addinivalue_line(
+        "markers",
+        "live_mt: test may reach the public MT endpoint over the network.",
     )
 
 
@@ -70,6 +81,22 @@ def _has_live_key() -> bool:
         if candidate.exists():
             load_dotenv(candidate)
     return any(os.environ.get(name) for name in _KEY_VARS)
+
+
+@pytest.fixture(autouse=True)
+def offline_translation(request, monkeypatch):
+    """Keep translation off the network unless a test asks for it.
+
+    Without this the public MT engine turns every ``localize()`` in the suite
+    into an HTTP request: slow, flaky on a train, and dependent on a third
+    party being up. The shipped pack still answers, so multilingual coverage is
+    still genuinely exercised - just from committed data.
+    """
+    if not request.node.get_closest_marker("live_mt"):
+        monkeypatch.setenv("GURUFLOW_PUBLIC_MT", "0")
+    # Never let a test's write-back edit the packs that ship in the repo.
+    monkeypatch.setenv("GURUFLOW_TRANSLATION_WRITEBACK", "0")
+    yield
 
 
 @pytest.fixture(autouse=True)

@@ -3,25 +3,37 @@
 ``english`` / ``hindi`` / ``hinglish`` are hand-authored across the planner
 catalogues, evaluation feedback, flashcards and everything else that is keyed
 by language. The twelve additional languages are **not** hand-written
-everywhere; they are localised on demand instead:
+everywhere; they are resolved through a four-tier stack, cheapest first:
 
-1. a per-process memory cache, so each string is translated at most once;
-2. Gemini Flash when ``GEMINI_API_KEY`` is configured - a real translation,
-   produced once and cached;
-3. the canonical English string unchanged as a defensive last step, so an
-   uncached string never breaks (or lies on) a lesson.
+1. a per-process memory cache, so each string is resolved at most once;
+2. the **shipped translation pack** in ``data/translations`` - every fixed
+   string in the curated lessons, translated ahead of time and committed, so a
+   Tamil lesson is instant, offline and identical on every machine;
+3. a **translation engine**: Gemini Flash for quality, falling back to a
+   key-free public MT endpoint when Gemini is rate-limited or absent. Anything
+   an engine produces is written back into the pack, so it is paid for once;
+4. the canonical English string unchanged as a defensive last step, so an
+   unreachable network never breaks (or blanks) a lesson.
+
+Tier 2 exists because tier 3 alone was not enough. Gemini's free tier allows
+20 requests per model per day; once a day's budget was gone, all twelve
+extended languages quietly served English and the multilingual feature looked
+broken. The pack removes the demo path from the network entirely, and the MT
+fallback keeps *off-catalogue* lessons working after that.
 
 The translation prompt forbids touching numbers, unit symbols, variable
-letters and equations, so ``I = V/R`` survives any language exactly. What
-localise() returns is fed straight into the existing narration/voice/caption
-pipeline, so a learner in Tamil, Bengali or Marathi gets a working lesson and
-video even fully offline.
+letters and equations, so ``I = V/R`` survives any language exactly; the pack
+builder verifies this rather than trusting it. What ``localize()`` returns is
+fed straight into the existing narration/voice/caption pipeline, so a learner
+in Tamil, Bengali or Marathi gets a working lesson and video even fully
+offline.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+
+from services.translation import engines, pack
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +96,7 @@ def is_supported(language: str) -> bool:
 def clear_translation_cache() -> None:
     """Forget cached translations (used by tests to stay hermetic)."""
     _cache.clear()
+    pack.reset_cache()
 
 
 def localized(mapping: dict[str, str], language: str) -> str:
@@ -116,22 +129,39 @@ def localize(text: str, language: str) -> str:
     if cached is not _MISSING:
         return cached if cached else clean
 
-    translated = _gemini_translate(clean, language)
-    _cache[key] = translated
-    return translated if translated else clean
+    # Tier 2: a pre-translated string costs nothing and needs no network.
+    shipped = pack.lookup(clean, language)
+    if shipped:
+        _cache[key] = shipped
+        return shipped
+
+    # Tier 3: ask the engines, best quality first.
+    translated = _translate_via_engines(clean, language)
+    if translated:
+        _cache[key] = translated
+        pack.remember(clean, translated, language)
+        return translated
+
+    # Tier 4. A failed lookup is deliberately NOT cached. Caching the miss used
+    # to pin the language to English for the rest of the process: one lesson
+    # planned while Gemini was rate-limited left every later lesson in that
+    # process English too, even after quota reset. The engines' own
+    # ``available()`` checks are local and cheap, so retrying costs nothing
+    # when they are genuinely down.
+    return clean
 
 
 def localize_batch(texts: list[str], language: str) -> None:
-    """Translate many strings in one Gemini call and prime the cache.
+    """Resolve many strings at once and prime the cache.
 
-    Localising a lesson one string at a time meant ~14 serial API round trips
-    per lesson: about two minutes on the plan screen, and 14 of the free tier's
-    20 daily requests spent on a single lesson. One call for the whole lesson
-    fixes both.
+    Localising a lesson one string at a time meant ~14 serial round trips per
+    lesson: about two minutes on the plan screen, and 14 of Gemini's 20 daily
+    free requests spent on a single lesson. This resolves the whole lesson in
+    one pass instead.
 
     Nothing is returned - callers keep using ``localize``/``localized``, which
-    now hit a warm cache. A failure here is silent by design: the per-string
-    path still works, it is just slower.
+    now hit a warm cache. Failure is silent by design: the per-string path
+    still works, it is just slower.
     """
     if language in CORE_LANGUAGES or language not in SUPPORTED_LANGUAGES:
         return
@@ -139,53 +169,58 @@ def localize_batch(texts: list[str], language: str) -> None:
     pending = []
     for text in texts:
         clean = (text or "").strip()
-        if clean and (language, clean) not in _cache and clean not in pending:
+        if not clean or (language, clean) in _cache or clean in pending:
+            continue
+        # Tier 2 first: anything the shipped pack knows needs no engine at all.
+        shipped = pack.lookup(clean, language)
+        if shipped:
+            _cache[(language, clean)] = shipped
+        else:
             pending.append(clean)
     if not pending:
         return
 
-    try:
-        from services.llm import _generate_text, gemini_available
-    except ImportError:
-        return
-    if not gemini_available():
-        # Cache the misses so an offline run does not retry each string later.
-        for text in pending:
-            _cache[(language, text)] = None
-        return
+    # Gemini can do the whole batch in one request, which is the difference
+    # between one free-tier call per lesson and one per string.
+    gemini = engines.GeminiEngine()
+    if gemini.available():
+        try:
+            translated = gemini.translate_batch(pending, language)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Batch translation to %s failed: %s", language, exc)
+            translated = None
+        if translated:
+            leftover = []
+            for source, result in zip(pending, translated):
+                cleaned = (result or "").strip()
+                if cleaned:
+                    _cache[(language, source)] = cleaned
+                    pack.remember(source, cleaned, language)
+                else:
+                    leftover.append(source)
+            pending = leftover
 
-    numbered = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(pending))
-    prompt = (
-        f"You are a professional translator for an Indian school. Translate "
-        f"each numbered line below into {language_name(language)}.\n"
-        f"Do NOT change numbers, unit symbols, variable letters, or any "
-        f"equation such as I = V/R; keep them exactly as written.\n"
-        f"Keep the tone warm, simple and clear for Class 9 students.\n"
-        f"Return ONLY a JSON array of {len(pending)} strings, in the same "
-        f"order, with no numbering and no commentary.\n\n{numbered}"
-    )
-
-    try:
-        raw = _generate_text(prompt)
-        translated = _parse_json_array(raw)
-    except Exception as exc:  # noqa: BLE001 - fall back to per-string
-        logger.warning("Batch translation to %s failed: %s", language, exc)
+    # Whatever Gemini could not do - because it is absent, rate-limited, or
+    # returned a malformed batch - the public MT engine picks up one string at
+    # a time. Slower, but it has no daily budget, so the lesson still ships in
+    # the learner's language.
+    if not pending:
         return
-
-    if not translated or len(translated) != len(pending):
-        logger.warning(
-            "Batch translation to %s returned %s items for %s inputs; "
-            "falling back to per-string.",
-            language,
-            len(translated) if translated else 0,
-            len(pending),
-        )
+    mt = engines.PublicMTEngine()
+    if not mt.available():
+        # Nothing can translate right now. Do NOT cache the miss: the engines
+        # may be reachable again in a minute, and a cached None used to pin a
+        # language to English for the rest of the process lifetime.
         return
-
-    for source, result in zip(pending, translated):
-        cleaned = (result or "").strip()
-        if cleaned:
-            _cache[(language, source)] = cleaned
+    for source in pending:
+        try:
+            result = mt.translate(source, language)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Public MT to %s failed: %s", language, exc)
+            continue
+        if result:
+            _cache[(language, source)] = result
+            pack.remember(source, result, language)
 
 
 def _parse_json_array(raw: str) -> list[str] | None:
@@ -212,30 +247,54 @@ def _parse_json_array(raw: str) -> list[str] | None:
     return [item if isinstance(item, str) else str(item) for item in parsed]
 
 
-def _gemini_translate(text: str, language: str) -> str | None:
-    """Translate via Gemini Flash. Returns None (source kept) when offline."""
-    try:
-        from services.llm import _generate_text, gemini_available
-    except ImportError:
-        return None
-    if not gemini_available():
-        return None
+def _translate_via_engines(text: str, language: str) -> str | None:
+    """Walk the engine chain until one produces a translation.
 
-    prompt = (
-        f"You are a professional translator for an Indian school. Translate "
-        f"the teacher's narration below into {language_name(language)}. "
-        f"Do NOT change numbers, unit symbols, variable letters, or any "
-        f"equation such as I = V/R; keep them exactly as written. "
-        f"Keep the tone warm, simple and clear for Class 9 students. "
-        f"Return only the translation.\n\n"
-        f"NARRATION:\n{text}"
-    )
-    try:
-        translated = _generate_text(prompt)
-        return translated.strip() if translated and translated.strip() else None
-    except Exception as exc:
-        logger.warning("Translation to %s failed: %s", language, exc)
-        return None
+    Returns None when every engine declines, which leaves the caller with the
+    English source - degraded, but never blank and never a crash.
+    """
+    for engine in engines.default_engines():
+        try:
+            if not engine.available():
+                continue
+            result = engine.translate(text, language)
+        except Exception as exc:  # noqa: BLE001 - an engine may not break the chain
+            logger.warning("Translation engine %s raised: %s", engine.name, exc)
+            continue
+        if result:
+            logger.debug("Translated to %s via %s", language, engine.name)
+            return result
+    return None
+
+
+def translation_health(language: str) -> dict[str, object]:
+    """What a learner in this language will actually get - surfaced in /health.
+
+    The old failure was invisible: the API reported a healthy service while
+    every Tamil string quietly came back in English. This makes the degraded
+    state legible before a lesson starts.
+    """
+    if language in CORE_LANGUAGES:
+        return {"language": language, "tier": "authored", "packEntries": 0}
+    if language not in SUPPORTED_LANGUAGES:
+        return {"language": language, "tier": "unsupported", "packEntries": 0}
+
+    live = [e.name for e in engines.default_engines() if e.available()]
+    entries = pack.coverage(language)
+    if entries and live:
+        tier = "pack+live"
+    elif entries:
+        tier = "pack"
+    elif live:
+        tier = "live"
+    else:
+        tier = "english-fallback"
+    return {
+        "language": language,
+        "tier": tier,
+        "packEntries": entries,
+        "engines": live,
+    }
 
 
 __all__ = [
@@ -248,4 +307,5 @@ __all__ = [
     "localize",
     "localize_batch",
     "localized",
+    "translation_health",
 ]

@@ -30,6 +30,10 @@ class LessonSession:
     scenes_completed: set[str] = field(default_factory=set)
     checkpoints_passed: int = 0
     checkpoints_failed: int = 0
+    # Result of the end-of-lesson quiz, once the learner has taken it. The
+    # report prefers this over checkpoint evidence: one checkpoint answer is a
+    # signal, a graded quiz is a measurement.
+    quiz_result: dict[str, Any] | None = None
 
     def record_attempt(self, checkpoint_id: str) -> int:
         """Increment and return the 1-based attempt number for a checkpoint."""
@@ -60,6 +64,20 @@ class LessonSession:
 
     def set_mastery(self, concept_id: str, mastery: float) -> None:
         self.concept_mastery[concept_id] = mastery
+
+    def record_quiz(self, result: dict[str, Any]) -> None:
+        """Fold a graded quiz into the session's picture of the learner.
+
+        Quiz evidence *replaces* the checkpoint estimate for any concept it
+        covers: the checkpoint saw one answer to one question, the quiz saw the
+        learner use the concept. Concepts the quiz did not ask about keep the
+        mastery they already had.
+        """
+        self.quiz_result = result
+        for concept_id, mastery in (result.get("conceptMastery") or {}).items():
+            self.concept_mastery[concept_id] = mastery
+        for misconception in result.get("misconceptions") or []:
+            self.note_misconception(misconception, "")
 
     def elapsed_seconds(self) -> int:
         return int(time.time() - self.started_at)

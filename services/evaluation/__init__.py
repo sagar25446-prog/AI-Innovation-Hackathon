@@ -259,6 +259,21 @@ def evaluate_answer(
     }
 
 
+# Revision advice, authored in English and localised on the way out. These used
+# to be English string literals inlined in build_report, which meant a learner
+# who took the whole lesson in Tamil reached the final screen and was told what
+# to revise in English.
+_REVISION = {
+    "practise-ohms": "Practise more I = V/R calculations with different R values",
+    "water-pipe": "Try the water pipe simulation",
+    "what-is-constant": (
+        "Re-read which quantity is held constant before applying I = V/R"
+    ),
+    "revisit": "Revisit these concepts",
+    "move-on": "Move on to Series and Parallel Circuits",
+}
+
+
 def build_report(
     student_id: str,
     lesson_id: str,
@@ -268,31 +283,40 @@ def build_report(
     checkpoints_passed: int,
     checkpoints_failed: int,
     total_time_seconds: int,
+    language: str = "english",
+    quiz_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Assemble the final learning report from the learner's session state."""
+    """Assemble the final learning report from the learner's session state.
+
+    When the learner took the end-of-lesson quiz, ``quiz_result`` carries the
+    graded evidence and the headline score comes from it: a quiz measures
+    several concepts across several question types, where checkpoint mastery is
+    inferred from one answer to one question. Without a quiz the report falls
+    back to that inference exactly as before, so a lesson cut short still ends
+    with something useful.
+    """
     strong = sorted([c for c, m in concept_mastery.items() if m >= 0.7])
     weak = sorted([c for c, m in concept_mastery.items() if m < 0.7])
 
-    score = (
+    inferred = (
         round(sum(concept_mastery.values()) / len(concept_mastery), 2)
         if concept_mastery
         else 0.0
     )
+    score = round(quiz_result["score"], 2) if quiz_result else inferred
 
     revision_actions: list[str] = []
     if any(m["id"] == DIRECT_PROPORTIONALITY for m in misconceptions):
-        revision_actions.append(
-            "Practise more I = V/R calculations with different R values"
-        )
-        revision_actions.append("Try the water pipe simulation")
+        revision_actions.append(localize(_REVISION["practise-ohms"], language))
+        revision_actions.append(localize(_REVISION["water-pipe"], language))
     if any(m["id"] == CONSTANT_CURRENT for m in misconceptions):
-        revision_actions.append(
-            "Re-read which quantity is held constant before applying I = V/R"
-        )
+        revision_actions.append(localize(_REVISION["what-is-constant"], language))
     if weak:
-        revision_actions.append(f"Revisit: {', '.join(weak)}")
+        revision_actions.append(
+            f"{localize(_REVISION['revisit'], language)}: {', '.join(weak)}"
+        )
     if not revision_actions:
-        revision_actions.append("Move on to Series and Parallel Circuits")
+        revision_actions.append(localize(_REVISION["move-on"], language))
 
     return {
         "studentId": student_id,
@@ -307,6 +331,11 @@ def build_report(
         "scenesCompleted": scenes_completed,
         "checkpointsPassed": checkpoints_passed,
         "checkpointsFailed": checkpoints_failed,
+        "quizTaken": bool(quiz_result),
+        "quizScore": round(quiz_result["score"], 2) if quiz_result else None,
+        "quizVerdict": quiz_result.get("verdictText") if quiz_result else None,
+        "quizCorrect": quiz_result.get("correctCount") if quiz_result else None,
+        "quizTotal": quiz_result.get("questionCount") if quiz_result else None,
     }
 
 

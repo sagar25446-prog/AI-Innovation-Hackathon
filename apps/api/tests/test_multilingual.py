@@ -1,10 +1,17 @@
 """The fifteen teaching languages, end to end.
 
-Everything here runs **offline**. `conftest.py` disables the LLM for unmarked
-tests, so `localize()` takes its documented last step and returns the canonical
-English string. That is the point: a learner in Tamil must still get a working
-lesson, a voice and a video when Gemini is unreachable - degraded to English
-narration, never a crash and never a blank scene.
+Everything here runs **offline**: `conftest.py` disables both the LLM and the
+public MT engine for unmarked tests. What is left is the shipped translation
+pack in `data/translations`, which is committed to the repo, so these tests
+assert the behaviour a judge actually gets on a fresh clone with no API key and
+no internet - not a best case that depends on a live service.
+
+Two guarantees are being pinned here:
+
+* a curated lesson is **really translated** in all fifteen languages, from the
+  pack, with no network at all; and
+* a string the pack does not carry degrades to English rather than crashing or
+  rendering blank.
 """
 
 from __future__ import annotations
@@ -30,6 +37,18 @@ def clean_translation_cache():
     translation.clear_translation_cache()
     yield
     translation.clear_translation_cache()
+
+
+def _catalogue_narration() -> str:
+    """The Ohm's Law narration exactly as the pack builder collects it.
+
+    Hard-coding a string here would silently stop testing the pack the moment
+    the curated copy was reworded: the pack would no longer carry it, and the
+    test would only prove the English fallback still works.
+    """
+    from services.planner.concepts import CONCEPTS_BY_ID
+
+    return CONCEPTS_BY_ID["ohms-law"]["narration"]["english"]
 
 
 def _learner(language, **overrides):
@@ -86,11 +105,44 @@ def test_the_pydantic_literal_matches_the_service():
 # ---------------------------------------------------------------------------
 
 
-def test_offline_localize_returns_the_source_unchanged():
-    """No LLM means the English text passes through - never a blank string."""
-    source = "Ohm's Law says V = I x R."
+def test_a_string_no_engine_can_reach_falls_back_to_english():
+    """With every engine off and no pack entry, the source passes through.
+
+    The string is deliberately one the shipped pack cannot contain, so this
+    tests the last-resort path rather than accidentally testing the pack.
+    """
+    source = "Zorblat the quintessence of flimbertwaddle, unto ninefold."
     for language in EXTENDED:
         assert translation.localize(source, language) == source
+
+
+def test_the_shipped_pack_really_translates_every_extended_language():
+    """The headline claim: fifteen languages, offline, no key, no network.
+
+    This is the regression guard for the bug that made the feature look fake -
+    Gemini's free tier ran out, every extended language quietly served English,
+    and nothing in the suite noticed because the tests only asserted that
+    English came back.
+    """
+    source = translation.CORE_LANGUAGES and _catalogue_narration()
+    for language in EXTENDED:
+        translated = translation.localize(source, language)
+        assert translated != source, (
+            f"{language} fell back to English; the shipped pack is missing this "
+            f"string. Re-run tools/build_translation_pack.py."
+        )
+        assert translated.strip()
+
+
+def test_equations_survive_the_shipped_translations():
+    """A translation that mangles I = V/R teaches the wrong physics."""
+    source = _catalogue_narration()
+    assert "V/R" in source.replace(" ", ""), "test fixture no longer carries a formula"
+    for language in EXTENDED:
+        translated = translation.localize(source, language)
+        assert "V/R" in translated.replace(" ", ""), (
+            f"{language} lost the formula: {translated}"
+        )
 
 
 def test_core_languages_are_never_translated():
@@ -113,9 +165,21 @@ def test_localized_prefers_an_authored_string_over_translating():
     assert translation.localized(mapping, "tamil") == "சரி!"
 
 
-def test_localized_falls_back_to_english_for_an_unauthored_language():
-    mapping = {"english": "Correct!"}
-    assert translation.localized(mapping, "telugu") == "Correct!"
+def test_localized_falls_back_to_english_when_nothing_can_translate():
+    mapping = {"english": "Zorblat the quintessence of flimbertwaddle."}
+    assert translation.localized(mapping, "telugu") == mapping["english"]
+
+
+def test_localized_uses_the_pack_for_an_unauthored_language():
+    """`localized` must reach the pack too, not only `localize`.
+
+    Checkpoint feedback goes through `localized`, so a learner in Telugu who
+    answers correctly must be congratulated in Telugu.
+    """
+    from services.evaluation import FEEDBACK
+
+    mapping = {"english": FEEDBACK["correct_first"]["english"]}
+    assert translation.localized(mapping, "telugu") != mapping["english"]
 
 
 def test_localized_survives_a_mapping_with_no_english():
@@ -308,11 +372,18 @@ def test_batch_is_a_no_op_for_core_languages():
     assert calls == []
 
 
-def test_batch_offline_caches_the_misses_so_it_does_not_retry():
-    """An offline run must not re-ask for every string on the next lookup."""
+def test_an_unreachable_engine_does_not_pin_a_language_to_english():
+    """The regression that made "it only works in Hinglish" permanent.
+
+    `localize` used to cache the miss as None. One lesson planned while Gemini
+    was rate-limited therefore left *every* later lesson in that process in
+    English too - even after the quota reset, even after the network came back,
+    until someone restarted the server. A failed lookup must leave no trace.
+    """
     translation.localize_batch(["alpha", "beta"], "tamil")
-    assert translation._cache[("tamil", "alpha")] is None
+    assert ("tamil", "alpha") not in translation._cache
     assert translation.localize("alpha", "tamil") == "alpha"
+    assert ("tamil", "alpha") not in translation._cache
 
 
 def test_batch_primes_the_cache_so_localize_becomes_free(monkeypatch):
@@ -346,8 +417,9 @@ def test_a_mismatched_batch_reply_is_ignored_rather_than_misaligned(monkeypatch)
     monkeypatch.setattr(llm, "_generate_text", lambda p: '["only-one"]')
 
     translation.localize_batch(["one", "two"], "tamil")
-    # Nothing cached, so the per-string path still runs and nothing is wrong.
+    # The whole batch is discarded rather than pairing "only-one" with "one".
     assert ("tamil", "one") not in translation._cache
+    assert ("tamil", "two") not in translation._cache
 
 
 def test_batch_skips_strings_already_cached(monkeypatch):

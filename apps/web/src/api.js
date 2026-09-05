@@ -248,6 +248,33 @@ export class GuruFlowClient {
     return report;
   }
 
+  /**
+   * Fetch the end-of-lesson quiz.
+   *
+   * Returns null rather than throwing when no quiz exists for this lesson
+   * (an off-catalogue topic with no model to write questions). The caller
+   * then goes straight to the report, which is still worth showing.
+   */
+  async getQuiz(lessonId) {
+    if (!this.isLive) return loadFixture('ohms-law-quiz.json').catch(() => null);
+    try {
+      return await request(`/lessons/${lessonId}/quiz`, { method: 'POST' });
+    } catch (err) {
+      return null;
+    }
+  }
+
+  async submitQuiz(lessonId, responses) {
+    if (!this.isLive) {
+      // Demo mode grades nothing; the report fixture carries its own score.
+      return { score: 0, results: [], questionCount: responses.length, offline: true };
+    }
+    return request(`/lessons/${lessonId}/quiz/submit`, {
+      method: 'POST',
+      body: JSON.stringify({ responses }),
+    });
+  }
+
   async getProfile(studentId) {
     if (this.isLive) {
       try {

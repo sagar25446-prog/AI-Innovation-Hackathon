@@ -1234,3 +1234,211 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   body { background: #fff; }
   .card, .report-card { box-shadow: none; border-color: #ddd; }
 }
+
+/* ==========================================================================
+   END-OF-LESSON ASSESSMENT
+   ==========================================================================
+   The quiz is where the lesson gets tested, so it is deliberately the calmest
+   screen in the product: one column, generous spacing, no competing colour
+   until an answer has actually been marked. Correct and incorrect states use
+   the same green/amber pair as the rest of the app rather than inventing a
+   third vocabulary. */
+
+.quiz-card {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.quiz-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4, 16px);
+  flex-wrap: wrap;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 24px;
+}
+
+.quiz-header .hint {
+  max-width: 46ch;
+  margin: 6px 0 0;
+}
+
+.quiz-progress {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 5px 12px;
+  white-space: nowrap;
+}
+
+.quiz-question {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+  background: var(--surface);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.quiz-question:hover { border-color: var(--border-strong); }
+
+.quiz-question-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.quiz-number {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.quiz-prompt {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.55;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.quiz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 36px;
+}
+
+.quiz-option {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  line-height: 1.5;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.quiz-option:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.quiz-option input { margin-top: 3px; accent-color: var(--accent); }
+
+/* :has keeps the selected row highlighted without a class round-trip through
+   JS; browsers without it simply show the radio, which is still usable. */
+.quiz-option:has(input:checked) {
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+}
+
+.quiz-input {
+  width: 100%;
+  margin-left: 36px;
+  max-width: calc(100% - 36px);
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.quiz-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.quiz-hint {
+  margin: 8px 0 0 36px;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+
+/* --- Marked states ------------------------------------------------------ */
+
+.quiz-question.is-correct {
+  border-color: var(--good-border);
+  background: var(--good-subtle);
+}
+
+.quiz-question.is-incorrect {
+  border-color: var(--warn-border);
+  background: var(--warn-subtle);
+}
+
+.quiz-verdict {
+  margin: 16px 0 0 36px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.quiz-verdict strong { display: block; margin-bottom: 4px; }
+.is-correct .quiz-verdict strong { color: var(--good); }
+.is-incorrect .quiz-verdict strong { color: var(--warn); }
+.quiz-verdict p { margin: 0; color: var(--text-secondary); }
+
+.quiz-summary {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-subtle);
+  border-radius: var(--radius);
+}
+
+.quiz-score {
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.quiz-summary p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.quiz-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  margin-top: 24px;
+}
+
+@media (max-width: 640px) {
+  .quiz-options,
+  .quiz-verdict { padding-left: 0; margin-left: 0; }
+  .quiz-input { margin-left: 0; max-width: 100%; }
+  .quiz-hint { margin-left: 0; }
+  .quiz-summary { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
