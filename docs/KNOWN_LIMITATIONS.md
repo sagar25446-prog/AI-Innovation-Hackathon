@@ -103,10 +103,32 @@ lip-synced human. A SadTalker integration ships behind
 plus a portrait you have rights to. Off by default; every failure path falls
 back to the drawn avatar.
 
-## 6. Languages
+## 6. Languages: fifteen, but only three are hand-authored
 
-Three: English, Hindi, Hinglish. The rubric rewards more. Adding another is a
-data change in `services/planner/concepts.py`, not a code change.
+**English, Hindi and Hinglish** have hand-written narration, feedback,
+flashcards and depth notes throughout the concept catalogue. These are the
+languages the product was designed in, and they are the best experience.
+
+**Twelve more** - Bengali, Gujarati, Kannada, Malayalam, Marathi, Nepali, Odia,
+Punjabi, Sinhala, Tamil, Telugu and Urdu - are localised on demand by
+`services/translation`. What that means in practice:
+
+* **With a Gemini key:** a real translation, produced once and cached. The
+  prompt forbids touching numbers, units, variable letters and equations, so
+  `I = V/R` survives every language exactly.
+* **Offline:** the canonical English string is returned unchanged. A Tamil
+  learner still gets a complete lesson, voice and video - narrated in English.
+  That is a deliberate degradation, not a failure: a working English lesson
+  beats a blank scene or a crash.
+
+So "fifteen languages" is honest about *coverage*, not about *authoring depth*.
+Do not claim fifteen hand-written curricula.
+
+### Voice
+
+Thirteen of the fifteen have a female edge-tts neural voice. **Odia and
+Punjabi have none**, and fall back to gTTS or captions-only. This is asserted
+in the tests so it cannot regress silently.
 
 ## 7. Persistence
 

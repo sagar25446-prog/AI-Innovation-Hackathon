@@ -294,3 +294,75 @@ def test_an_unsupported_language_is_rejected(client):
         f"/lessons/{plan['id']}/language", json={"language": "klingon"}
     )
     assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Batched translation
+# ---------------------------------------------------------------------------
+
+
+def test_batch_is_a_no_op_for_core_languages():
+    """Core catalogues are authored; batching them would waste a call."""
+    calls = []
+    translation.localize_batch(["hello"], "english")
+    assert calls == []
+
+
+def test_batch_offline_caches_the_misses_so_it_does_not_retry():
+    """An offline run must not re-ask for every string on the next lookup."""
+    translation.localize_batch(["alpha", "beta"], "tamil")
+    assert translation._cache[("tamil", "alpha")] is None
+    assert translation.localize("alpha", "tamil") == "alpha"
+
+
+def test_batch_primes_the_cache_so_localize_becomes_free(monkeypatch):
+    """One call for a lesson, then every lookup is a cache hit."""
+    monkeypatch.setattr(translation, "_cache", {})
+    calls = {"n": 0}
+
+    def fake_generate(prompt):
+        calls["n"] += 1
+        return '["TA-one", "TA-two"]'
+
+    import services.llm as llm
+
+    monkeypatch.setattr(llm, "gemini_available", lambda: True)
+    monkeypatch.setattr(llm, "_generate_text", fake_generate)
+
+    translation.localize_batch(["one", "two"], "tamil")
+    assert calls["n"] == 1
+    # Both lookups now resolve without another API call.
+    assert translation.localize("one", "tamil") == "TA-one"
+    assert translation.localize("two", "tamil") == "TA-two"
+    assert calls["n"] == 1
+
+
+def test_a_mismatched_batch_reply_is_ignored_rather_than_misaligned(monkeypatch):
+    """A short reply must not shift translations onto the wrong strings."""
+    monkeypatch.setattr(translation, "_cache", {})
+    import services.llm as llm
+
+    monkeypatch.setattr(llm, "gemini_available", lambda: True)
+    monkeypatch.setattr(llm, "_generate_text", lambda p: '["only-one"]')
+
+    translation.localize_batch(["one", "two"], "tamil")
+    # Nothing cached, so the per-string path still runs and nothing is wrong.
+    assert ("tamil", "one") not in translation._cache
+
+
+def test_batch_skips_strings_already_cached(monkeypatch):
+    monkeypatch.setattr(translation, "_cache", {("tamil", "known"): "TA-known"})
+    seen = {}
+
+    import services.llm as llm
+
+    monkeypatch.setattr(llm, "gemini_available", lambda: True)
+
+    def capture(prompt):
+        seen["prompt"] = prompt
+        return '["TA-new"]'
+
+    monkeypatch.setattr(llm, "_generate_text", capture)
+    translation.localize_batch(["known", "new"], "tamil")
+    assert "known" not in seen["prompt"], "already-translated text was re-sent"
+    assert translation._cache[("tamil", "new")] == "TA-new"

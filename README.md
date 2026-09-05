@@ -33,6 +33,31 @@ See [the integrated product](docs/INTEGRATED_PRODUCT.md) for the full SWOT.
 
 The focused demo uses a Class 9 Electricity upload and teaches Ohm's Law in Hinglish to a beginner. It visibly shows sources, an avatar plus circuit visual, a wrong answer, misconception recovery, and a final report.
 
+## Teaching languages
+
+Fifteen. **English, Hindi and Hinglish** are hand-authored end to end; the other
+twelve - Bengali, Gujarati, Kannada, Malayalam, Marathi, Nepali, Odia, Punjabi,
+Sinhala, Tamil, Telugu, Urdu - are localised on demand by
+`services/translation`, using Gemini when a key is present and falling back to
+the English source offline so a lesson always renders.
+
+Equations are never translated: the prompt pins numbers, units, variable
+letters and expressions, so `I = V/R` is identical in all fifteen.
+
+Switch language mid-lesson and mastery, attempts and diagnosed misconceptions
+all survive. See [known limitations](docs/KNOWN_LIMITATIONS.md#6-languages-fifteen-but-only-three-are-hand-authored)
+for what "fifteen" does and does not mean.
+
+## Lesson planning: curated first, LLM for the rest
+
+A topic the built-in catalogue covers is planned deterministically - identical
+every run, instant, and no API quota. Anything else (an off-catalogue topic, or
+your own upload) goes to Gemini.
+
+That split matters for demos: only a reproducible plan can reuse pre-rendered
+video, and it keeps the free tier's daily quota for the topics that actually
+need generating. `GURUFLOW_PREFER_CURATED=0` forces LLM planning everywhere.
+
 ## Run the product
 
 Needs **Python 3.12**. Everything installs from wheels - no compiler, no

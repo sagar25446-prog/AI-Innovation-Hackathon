@@ -20,7 +20,12 @@ from typing import Any
 
 from services.ingestion import Material
 from services.planner.concepts import CONCEPTS_BY_ID
-from services.translation import CORE_LANGUAGES, localize, localized
+from services.translation import (
+    CORE_LANGUAGES,
+    localize,
+    localize_batch,
+    localized,
+)
 from services.planner.persona import apply_persona_narration
 from services.rag import (
     best_citations,
@@ -187,6 +192,21 @@ def _plan_lesson_deterministic(
     concept_ids = _apply_study_mode(concept_ids, study_mode)
     tier_name = study_mode if study_mode != "lesson" else _tier_name_for(concept_ids)
     multiplier = LEVEL_DURATION_MULTIPLIER[level]
+
+    # Warm the translation cache for the whole lesson in one API call. Without
+    # this each narration and objective is translated individually - about 14
+    # serial round trips for a 7-scene lesson, which took two minutes on the
+    # plan screen and spent most of the free tier's daily quota on one lesson.
+    if language not in CORE_LANGUAGES:
+        strings: list[str] = []
+        for concept_id in concept_ids:
+            concept = CONCEPTS_BY_ID[concept_id]
+            strings.append(concept["narration"].get("english", ""))
+            strings.append(concept["objective"].get("english", ""))
+            depth = concept.get("depth", {}).get("english", {})
+            if level != "beginner" and depth.get(level):
+                strings.append(depth[level])
+        localize_batch(strings, language)
 
     raw_durations = [
         max(MIN_SCENE_SECONDS, int(round(CONCEPTS_BY_ID[cid]["baseSeconds"] * multiplier)))

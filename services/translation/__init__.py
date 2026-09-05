@@ -121,6 +121,97 @@ def localize(text: str, language: str) -> str:
     return translated if translated else clean
 
 
+def localize_batch(texts: list[str], language: str) -> None:
+    """Translate many strings in one Gemini call and prime the cache.
+
+    Localising a lesson one string at a time meant ~14 serial API round trips
+    per lesson: about two minutes on the plan screen, and 14 of the free tier's
+    20 daily requests spent on a single lesson. One call for the whole lesson
+    fixes both.
+
+    Nothing is returned - callers keep using ``localize``/``localized``, which
+    now hit a warm cache. A failure here is silent by design: the per-string
+    path still works, it is just slower.
+    """
+    if language in CORE_LANGUAGES or language not in SUPPORTED_LANGUAGES:
+        return
+
+    pending = []
+    for text in texts:
+        clean = (text or "").strip()
+        if clean and (language, clean) not in _cache and clean not in pending:
+            pending.append(clean)
+    if not pending:
+        return
+
+    try:
+        from services.llm import _generate_text, gemini_available
+    except ImportError:
+        return
+    if not gemini_available():
+        # Cache the misses so an offline run does not retry each string later.
+        for text in pending:
+            _cache[(language, text)] = None
+        return
+
+    numbered = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(pending))
+    prompt = (
+        f"You are a professional translator for an Indian school. Translate "
+        f"each numbered line below into {language_name(language)}.\n"
+        f"Do NOT change numbers, unit symbols, variable letters, or any "
+        f"equation such as I = V/R; keep them exactly as written.\n"
+        f"Keep the tone warm, simple and clear for Class 9 students.\n"
+        f"Return ONLY a JSON array of {len(pending)} strings, in the same "
+        f"order, with no numbering and no commentary.\n\n{numbered}"
+    )
+
+    try:
+        raw = _generate_text(prompt)
+        translated = _parse_json_array(raw)
+    except Exception as exc:  # noqa: BLE001 - fall back to per-string
+        logger.warning("Batch translation to %s failed: %s", language, exc)
+        return
+
+    if not translated or len(translated) != len(pending):
+        logger.warning(
+            "Batch translation to %s returned %s items for %s inputs; "
+            "falling back to per-string.",
+            language,
+            len(translated) if translated else 0,
+            len(pending),
+        )
+        return
+
+    for source, result in zip(pending, translated):
+        cleaned = (result or "").strip()
+        if cleaned:
+            _cache[(language, source)] = cleaned
+
+
+def _parse_json_array(raw: str) -> list[str] | None:
+    """Pull a JSON array of strings out of a model reply."""
+    import json
+    import re
+
+    if not raw:
+        return None
+    text = raw.strip()
+    # Models often wrap JSON in a fenced block.
+    fence = re.search(r"```(?:json)?\s*(.+?)```", text, re.S)
+    if fence:
+        text = fence.group(1).strip()
+    start, end = text.find("["), text.rfind("]")
+    if start == -1 or end <= start:
+        return None
+    try:
+        parsed = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, list):
+        return None
+    return [item if isinstance(item, str) else str(item) for item in parsed]
+
+
 def _gemini_translate(text: str, language: str) -> str | None:
     """Translate via Gemini Flash. Returns None (source kept) when offline."""
     try:
@@ -155,5 +246,6 @@ __all__ = [
     "is_supported",
     "language_name",
     "localize",
+    "localize_batch",
     "localized",
 ]
