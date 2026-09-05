@@ -13,7 +13,13 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 Level = Literal["beginner", "intermediate", "advanced"]
-Language = Literal["english", "hindi", "hinglish"]
+Language = Literal[
+    # Core teaching languages (hand-authored narration).
+    "english", "hindi", "hinglish",
+    # Extended languages (localised on demand by services.translation).
+    "bengali", "gujarati", "kannada", "malayalam", "marathi",
+    "nepali", "odia", "punjabi", "sinhala", "tamil", "telugu", "urdu",
+]
 Personality = Literal["patient", "socratic", "coach"]
 StudyMode = Literal["lesson", "exam", "revision"]
 VisualType = Literal[

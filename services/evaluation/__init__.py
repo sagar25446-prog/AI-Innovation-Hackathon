@@ -20,6 +20,7 @@ from services.evaluation.misconceptions import (
     misconception_id,
 )
 from services.planner.concepts import CHECKPOINT_CONCEPT_ID, NEXT_TOPIC
+from services.translation import localize, localized
 
 logger = logging.getLogger(__name__)
 
@@ -149,8 +150,8 @@ def build_repair_scene(misconception: str, language: str) -> dict[str, Any]:
     return {
         "id": f"scene-repair-{'ohms-law' if misconception == DIRECT_PROPORTIONALITY else 'constant-current'}",
         "conceptId": "ohms-law",
-        "objective": REPAIR_OBJECTIVE[misconception],
-        "narration": REPAIR_NARRATION[misconception][language],
+        "objective": localize(REPAIR_OBJECTIVE[misconception], language),
+        "narration": localized(REPAIR_NARRATION[misconception], language),
         "visual": {
             "type": "equation",
             "data": {
@@ -203,14 +204,14 @@ def evaluate_answer(
                         return {
                             "correct": True,
                             "mastery": mastery,
-                            "feedback": llm_result.get("feedback", FEEDBACK["correct_first" if first_try else "correct_retry"][language]),
+                            "feedback": llm_result.get("feedback", localized(FEEDBACK["correct_first" if first_try else "correct_retry"], language)),
                             "nextAction": "advance",
                         }
                     if classification == "unclear":
                         return {
                             "correct": False,
                             "mastery": MASTERY_UNCLEAR,
-                            "feedback": llm_result.get("feedback", FEEDBACK["unclear"][language]),
+                            "feedback": llm_result.get("feedback", localized(FEEDBACK["unclear"], language)),
                             "nextAction": "retry",
                         }
                     # Misconception
@@ -220,7 +221,7 @@ def evaluate_answer(
                             "correct": False,
                             "mastery": MASTERY_MISCONCEPTION,
                             "misconception": misconception,
-                            "feedback": llm_result.get("feedback", FEEDBACK.get(classification, {}).get(language, "Let me explain this differently.")),
+                            "feedback": llm_result.get("feedback", localized(FEEDBACK.get(classification, {"english": "Let me explain this differently."}), language)),
                             "nextAction": "repair",
                             "repairScene": build_repair_scene(misconception, language),
                         }
@@ -235,7 +236,7 @@ def evaluate_answer(
         return {
             "correct": True,
             "mastery": MASTERY_FIRST_TRY_CORRECT if first_try else MASTERY_AFTER_REPAIR,
-            "feedback": FEEDBACK["correct_first" if first_try else "correct_retry"][language],
+            "feedback": localized(FEEDBACK["correct_first" if first_try else "correct_retry"], language),
             "nextAction": "advance",
         }
 
@@ -243,7 +244,7 @@ def evaluate_answer(
         return {
             "correct": False,
             "mastery": MASTERY_UNCLEAR,
-            "feedback": FEEDBACK["unclear"][language],
+            "feedback": localized(FEEDBACK["unclear"], language),
             "nextAction": "retry",
         }
 
@@ -252,7 +253,7 @@ def evaluate_answer(
         "correct": False,
         "mastery": MASTERY_MISCONCEPTION,
         "misconception": misconception,
-        "feedback": FEEDBACK[classification][language],
+        "feedback": localized(FEEDBACK[classification], language),
         "nextAction": "repair",
         "repairScene": build_repair_scene(misconception, language),
     }

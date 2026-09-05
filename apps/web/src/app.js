@@ -1290,11 +1290,44 @@ function syncControlUI() {
   syncSliderLabel();
 }
 
+
+/**
+ * Keep the segmented buttons and the "more languages" dropdown in agreement.
+ *
+ * `#language` is the single value the rest of the app reads. The three core
+ * languages are buttons; the twelve localised ones live in a dropdown, because
+ * a fifteen-wide segmented strip does not fit. Whichever the learner touches
+ * last wins, and the other visibly clears so the screen never shows two
+ * different answers to the same question.
+ */
+function wireExtendedLanguages() {
+  const more = $('lang-more');
+  if (!more) return;
+
+  more.addEventListener('change', () => {
+    if (!more.value) return;
+    $('language').value = more.value;
+    // Clear the segmented selection: the chosen language is not one of them.
+    document.querySelectorAll('input[name="language"]:checked').forEach((radio) => {
+      radio.checked = false;
+    });
+  });
+
+  // Picking a core language again drops the dropdown back to its placeholder.
+  document.querySelectorAll('input[name="language"]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (radio.checked) more.value = '';
+    });
+  });
+}
+
 /** Copy checked segmented radio values into the hidden selects. */
 function syncRadiosToSelects() {
   const map = { level: 'level', language: 'language', 'study-mode': 'study-mode' };
   Object.entries(map).forEach(([radioName, selectId]) => {
     const checked = document.querySelector(`input[name="${radioName}"]:checked`);
+    // No checked radio means an extended language was picked from the
+    // dropdown; leave the hidden select alone rather than resetting it.
     if (checked) $(selectId).value = checked.value;
   });
   syncSliderLabel();
@@ -1505,6 +1538,7 @@ function init() {
     }
   });
 
+  wireExtendedLanguages();
   $('demo-btn').addEventListener('click', loadDemoPreset);
   $('restart-btn').addEventListener('click', restart);
   $('report-restart').addEventListener('click', restart);

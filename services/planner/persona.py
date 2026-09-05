@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.translation import localize
+
 # Tone framing prepended to each scene narration, per personality and language.
 _NARRATION_FRAMING: dict[str, dict[str, dict[str, str]]] = {
     "patient": {
@@ -85,7 +87,12 @@ def apply_persona_narration(
     framing_map = _NARRATION_FRAMING.get(personality)
     if not framing_map:
         return narration
-    lang_map = framing_map.get(language, framing_map.get("hinglish", {}))
+    lang_map = framing_map.get(language)
+    if lang_map is None:
+        base = framing_map.get("english", {})
+        prefix = base.get(level) or base.get("default", "")
+        prefix = localize(prefix, language) if prefix else ""
+        return f"{prefix}{narration}" if prefix else narration
     prefix = lang_map.get(level) or lang_map.get("default", "")
     return f"{prefix}{narration}" if prefix else narration
 

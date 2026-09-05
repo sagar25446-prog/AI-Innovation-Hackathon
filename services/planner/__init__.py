@@ -19,6 +19,7 @@ from typing import Any
 
 from services.ingestion import Material
 from services.planner.concepts import CONCEPTS_BY_ID
+from services.translation import CORE_LANGUAGES, localize, localized
 from services.planner.persona import apply_persona_narration
 from services.rag import (
     best_citations,
@@ -135,11 +136,24 @@ def _tier_name_for(concept_ids: list[str]) -> str:
 
 
 def build_narration(concept: dict[str, Any], language: str, level: str) -> str:
-    """Base narration in the learner's language, deepened for higher levels."""
-    narration = concept["narration"][language]
+    """Base narration in the learner's language, deepened for higher levels.
+
+    The catalogue authors english/hindi/hinglish. The other twelve languages go
+    through ``translation.localized``, which returns a real translation when
+    Gemini is configured and the canonical English otherwise - so a Tamil
+    learner always gets a lesson, never a KeyError.
+    """
+    narration = localized(concept["narration"], language)
     if level == "beginner":
         return narration
-    extra = concept.get("depth", {}).get(language, {}).get(level)
+
+    depth = concept.get("depth", {})
+    # Depth notes are per-language then per-level; fall back to English before
+    # localising, so an extended language still gets the deeper explanation.
+    per_language = depth.get(language) or depth.get("english") or {}
+    extra = per_language.get(level)
+    if extra and language not in CORE_LANGUAGES:
+        extra = localize(extra, language)
     return f"{narration} {extra}" if extra else narration
 
 
@@ -192,7 +206,7 @@ def _plan_lesson_deterministic(
         scene: dict[str, Any] = {
             "id": f"scene-{index + 1}-{concept_id}",
             "conceptId": concept_id,
-            "objective": concept["objective"][language],
+            "objective": localized(concept["objective"], language),
             "narration": narration,
             "visual": concept["visual"],
             "citations": best_citations(results),

@@ -29,26 +29,56 @@ logger = logging.getLogger(__name__)
 # Neural voices per teaching language. Hinglish uses a Hindi voice because it
 # pronounces romanised Hindi far better than an English voice does.
 # The GuruFlow teacher is female, so these are the female Indian neural voices.
+# a None value means edge-tts has no voice for that language: Punjabi falls
+# back to gTTS and Odia to captions-only (documented in GTTS_LANG_MAP).
 # Override per deployment with GURUFLOW_VOICE_<LANGUAGE>, e.g.
 #   set GURUFLOW_VOICE_HINGLISH=hi-IN-MadhurNeural
 # Verified available in edge-tts: en-IN-NeerjaNeural / en-IN-NeerjaExpressiveNeural
-# (female), hi-IN-SwaraNeural (female).
-_DEFAULT_VOICES: dict[str, str] = {
+# (female), hi-IN-SwaraNeural (female), bn-IN-TanishaaNeural,
+# gu-IN-DhwaniNeural, kn-IN-SapnaNeural, ml-IN-SobhanaNeural,
+# mr-IN-AarohiNeural, ne-NP-HemkalaNeural, si-LK-ThiliniNeural,
+# ta-IN-PallaviNeural, te-IN-ShrutiNeural, ur-IN-GulNeural (all female).
+_DEFAULT_VOICES: dict[str, str | None] = {
     "english": "en-IN-NeerjaNeural",
     "hindi": "hi-IN-SwaraNeural",
     "hinglish": "hi-IN-SwaraNeural",
+    "bengali": "bn-IN-TanishaaNeural",
+    "gujarati": "gu-IN-DhwaniNeural",
+    "kannada": "kn-IN-SapnaNeural",
+    "malayalam": "ml-IN-SobhanaNeural",
+    "marathi": "mr-IN-AarohiNeural",
+    "nepali": "ne-NP-HemkalaNeural",
+    "odia": None,
+    "punjabi": None,
+    "sinhala": "si-LK-ThiliniNeural",
+    "tamil": "ta-IN-PallaviNeural",
+    "telugu": "te-IN-ShrutiNeural",
+    "urdu": "ur-IN-GulNeural",
 }
 
-VOICE_MAP: dict[str, str] = {
-    language: os.environ.get(f"GURUFLOW_VOICE_{language.upper()}", default)
+VOICE_MAP: dict[str, str | None] = {
+    language: os.environ.get(f"GURUFLOW_VOICE_{language.upper()}") or default
     for language, default in _DEFAULT_VOICES.items()
 }
 
-# gTTS language codes for the fallback path.
+# gTTS language codes for the fallback path. 'or' (Odia) has no gTTS voice
+# either, so an Odia scene degrades to captions-only rather than failing.
 GTTS_LANG_MAP: dict[str, str] = {
     "english": "en",
     "hindi": "hi",
     "hinglish": "hi",
+    "bengali": "bn",
+    "gujarati": "gu",
+    "kannada": "kn",
+    "malayalam": "ml",
+    "marathi": "mr",
+    "nepali": "ne",
+    "odia": "or",
+    "punjabi": "pa",
+    "sinhala": "si",
+    "tamil": "ta",
+    "telugu": "te",
+    "urdu": "ur",
 }
 
 # edge-tts reports offsets in 100-nanosecond ticks.
@@ -88,7 +118,10 @@ async def _synthesize_edge(text: str, language: str) -> SpeechResult | None:
         logger.info("edge-tts not installed; trying next voice provider.")
         return None
 
-    voice = VOICE_MAP.get(language, VOICE_MAP["hinglish"])
+    voice = VOICE_MAP.get(language)
+    if not voice:
+        logger.info("No edge-tts voice for %s; trying gTTS.", language)
+        return None
     chunks: list[bytes] = []
     boundaries: list[dict[str, Any]] = []
 
