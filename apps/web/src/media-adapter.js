@@ -49,6 +49,12 @@ export class ServerTTSProvider extends TTSProvider {
     this.enabled = false;
     this.serverAvailable = true;
     this._currentAudio = null;
+    // Bumped on every speak() and stop(). A TTS fetch that resolves after its
+    // token is superseded is discarded rather than played - without this,
+    // switching language mid-scene left the previous language's request in
+    // flight, and both narrations played over each other once it arrived.
+    this._playToken = 0;
+    this._inFlight = null;
   }
 
   async synthesize(text, language) {
@@ -90,39 +96,71 @@ export class ServerTTSProvider extends TTSProvider {
   }
 
   speak(text, language, { onStart, onEnd } = {}) {
-    // Stop any current playback
+    // Stop any current playback. This also invalidates any request still in
+    // flight, so a slow response for the *previous* scene or language can
+    // never start playing on top of this one.
     this.stop();
+    const token = this._playToken;
 
-    // Try server TTS first
     if (this.serverAvailable) {
+      const controller =
+        typeof AbortController !== 'undefined' ? new AbortController() : null;
+      this._inFlight = controller;
+
       fetch('/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, language }),
+        signal: controller ? controller.signal : undefined,
       })
         .then((response) => {
           if (!response.ok) throw new Error('TTS failed');
           return response.blob();
         })
         .then((blob) => {
+          // Superseded while we waited: drop it, and free the blob rather than
+          // leaking one object URL per abandoned scene.
+          if (token !== this._playToken) return;
+
           const audioUrl = URL.createObjectURL(blob);
           const audio = new Audio(audioUrl);
           this._currentAudio = audio;
-          audio.onplay = () => { if (onStart) onStart(); };
+
+          const release = () => {
+            URL.revokeObjectURL(audioUrl);
+            if (this._currentAudio === audio) this._currentAudio = null;
+          };
+
+          audio.onplay = () => {
+            // A late play on a stale token still gets silenced.
+            if (token !== this._playToken) {
+              audio.pause();
+              release();
+              return;
+            }
+            if (onStart) onStart();
+          };
           audio.onended = () => {
-            this._currentAudio = null;
-            if (onEnd) onEnd();
+            release();
+            if (token === this._playToken && onEnd) onEnd();
           };
           audio.onerror = () => {
-            this._currentAudio = null;
+            release();
+            if (token !== this._playToken) return;
             this._fallbackBrowserSpeak(text, language, { onStart, onEnd });
           };
           audio.play().catch(() => {
-            this._currentAudio = null;
+            release();
+            if (token !== this._playToken) return;
             this._fallbackBrowserSpeak(text, language, { onStart, onEnd });
           });
         })
-        .catch(() => {
+        .catch((error) => {
+          // An abort is us cancelling deliberately, not a server failure -
+          // treating it as one would wrongly disable server TTS for the rest
+          // of the session.
+          if (error && error.name === 'AbortError') return;
+          if (token !== this._playToken) return;
           this.serverAvailable = false;
           this._fallbackBrowserSpeak(text, language, { onStart, onEnd });
         });
@@ -152,6 +190,14 @@ export class ServerTTSProvider extends TTSProvider {
   }
 
   stop() {
+    // Invalidate anything in flight *first*, so a response that arrives during
+    // this call is already stale by the time it tries to play.
+    this._playToken += 1;
+
+    if (this._inFlight) {
+      try { this._inFlight.abort(); } catch { /* already settled */ }
+      this._inFlight = null;
+    }
     if (this._currentAudio) {
       try { this._currentAudio.pause(); this._currentAudio.currentTime = 0; } catch {}
       this._currentAudio = null;

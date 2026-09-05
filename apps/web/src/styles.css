@@ -1240,3 +1240,125 @@ input[type="range"]::-moz-range-thumb {
   color: var(--text-dim);
 }
 .lang-more:focus { outline: none; border-color: var(--accent); }
+
+/* ==========================================================================
+   Why GuruFlow
+   ========================================================================== */
+
+.why-head {
+  max-width: 760px;
+  margin: 8px auto 40px;
+  text-align: center;
+}
+
+.why-head h2 {
+  font-size: clamp(26px, 4vw, 40px);
+  line-height: 1.2;
+  letter-spacing: -0.8px;
+  margin: 10px 0 14px;
+}
+
+.why-head .lede {
+  color: var(--text-dim);
+  font-size: 16px;
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+.why-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(288px, 1fr));
+  gap: 18px;
+  margin-bottom: 44px;
+}
+
+.why-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.why-card:hover {
+  border-color: var(--border-bright);
+  transform: translateY(-2px);
+}
+
+/* The lead card carries the actual differentiator, so it gets the width. */
+.why-card-lead {
+  grid-column: 1 / -1;
+  background:
+    linear-gradient(135deg, rgba(108, 140, 255, 0.10), transparent 60%),
+    var(--bg-raised);
+  border-color: rgba(108, 140, 255, 0.35);
+}
+
+.why-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+
+.why-card h3 {
+  font-size: 18px;
+  margin-bottom: 10px;
+  letter-spacing: -0.2px;
+}
+
+.why-card-lead h3 { font-size: 22px; }
+
+.why-card p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+
+.why-card code {
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--bg-input);
+  padding: 1px 6px;
+  border-radius: 5px;
+  color: var(--text);
+}
+
+/* 7 -> 8 scenes: the one number that makes the claim concrete. */
+.why-proof {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+}
+
+.why-before,
+.why-after {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.why-before { color: var(--text-faint); background: rgba(255, 255, 255, 0.04); }
+.why-after { color: var(--good); background: var(--good-soft); }
+.why-arrow { color: var(--text-faint); }
+.why-note { font-size: 13px; color: var(--text-faint); }
+
+.why-cta { text-align: center; padding-bottom: 24px; }
+.why-cta .btn { min-width: 260px; }
+.why-cta-note { margin-top: 10px; font-size: 13px; color: var(--text-faint); }
+
+@media (max-width: 640px) {
+  .why-card { padding: 20px; }
+  .why-cta .btn { width: 100%; min-width: 0; }
+}
