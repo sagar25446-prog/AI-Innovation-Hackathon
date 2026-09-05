@@ -14,6 +14,7 @@ topic-agnostic planning while keeping the deterministic path as fallback.
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from typing import Any
 
@@ -653,6 +654,17 @@ def _has_groundable_content(material: Material) -> bool:
     return _curated_catalogue_grounds(material)
 
 
+def _prefer_curated() -> bool:
+    """Whether a topic the curated catalogue covers should skip the LLM.
+
+    Defaults on: reproducible lessons, a usable video cache, and quota left for
+    the topics that actually need generating.
+    """
+    return os.environ.get("GURUFLOW_PREFER_CURATED", "1").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
 def plan_lesson(
     learner: dict[str, Any],
     material: Material,
@@ -681,10 +693,22 @@ def plan_lesson(
     except Exception as exc:
         logger.warning("Vector indexing skipped: %s", exc)
 
-    llm_plan = _plan_lesson_llm(learner, material, topic, lesson_id)
-    if llm_plan is not None:
-        llm_plan["studyMode"] = study_mode
-        return llm_plan
+    # The curated catalogue is deterministic, instant, quota-free and - because
+    # it is byte-identical every time - the only plan whose videos can be
+    # pre-rendered and actually reused. Asking the LLM to re-plan a topic the
+    # catalogue already covers produces a *different* lesson each run, which
+    # silently invalidates the pre-rendered cache and spends free-tier quota
+    # that the off-catalogue topics genuinely need.
+    #
+    # So the LLM handles what the catalogue cannot, which is where it earns its
+    # keep. Set GURUFLOW_PREFER_CURATED=0 to force LLM planning everywhere.
+    if _prefer_curated() and _curated_catalogue_grounds(material):
+        logger.info("Curated catalogue covers %r; planning deterministically.", topic)
+    else:
+        llm_plan = _plan_lesson_llm(learner, material, topic, lesson_id)
+        if llm_plan is not None:
+            llm_plan["studyMode"] = study_mode
+            return llm_plan
 
     # Honest refusal over wrong content: with no LLM and nothing to ground on,
     # never silently teach the Electricity default to a learner who asked for
