@@ -111,6 +111,24 @@ def remember(text: str, translation: str, language: str) -> None:
         path = pack_path(language)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Merge onto whatever is on disk *now*, not onto the copy this
+            # process loaded at startup. A long-running server holds its packs
+            # in memory for hours; if the build tool refreshes a pack in the
+            # meantime, writing the stale in-memory copy back silently deletes
+            # every entry the tool added. That is a lost update, and it is how
+            # three languages quietly lost eleven strings each.
+            merged = dict(pack)
+            try:
+                on_disk = json.loads(path.read_text(encoding="utf-8"))
+                existing = on_disk.get("entries", {}) if isinstance(on_disk, dict) else {}
+                for key, value in existing.items():
+                    # Anything the file has that we do not is newer than us.
+                    merged.setdefault(str(key), str(value))
+            except (OSError, json.JSONDecodeError):
+                pass  # No readable file yet; ours is the whole truth.
+            pack.update(merged)
+
             payload = {
                 "language": language,
                 "note": (
@@ -118,7 +136,7 @@ def remember(text: str, translation: str, language: str) -> None:
                     "runtime. Equations, numbers and unit symbols are preserved "
                     "verbatim; see services/translation/pack.py."
                 ),
-                "entries": dict(sorted(pack.items())),
+                "entries": dict(sorted(merged.items())),
             }
             # Write beside the target then replace, so a crash mid-write cannot
             # leave a half-written pack behind.

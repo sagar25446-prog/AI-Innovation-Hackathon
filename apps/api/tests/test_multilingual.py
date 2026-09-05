@@ -438,3 +438,95 @@ def test_batch_skips_strings_already_cached(monkeypatch):
     translation.localize_batch(["known", "new"], "tamil")
     assert "known" not in seen["prompt"], "already-translated text was re-sent"
     assert translation._cache[("tamil", "new")] == "TA-new"
+
+
+# ---------------------------------------------------------------------------
+# The no-key guarantee
+# ---------------------------------------------------------------------------
+# These run with the LLM disabled and the MT engine disabled (conftest), so
+# they assert exactly what a judge gets on a fresh clone with no API key and
+# no internet: fifteen working teaching languages, from committed data.
+
+
+def test_every_language_is_fully_covered_with_no_api_key():
+    """No language may quietly fall back to English.
+
+    This is the guarantee the shipped pack exists to provide. If it fails,
+    a language is serving English somewhere, and the fix is to re-run
+    tools/build_translation_pack.py --prune and commit the result.
+    """
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(REPO_ROOT))
+    from tools.build_translation_pack import collect_source_strings
+
+    sources = collect_source_strings()
+    short = {}
+    for language in EXTENDED:
+        missing = [s for s in sources if translation.localize(s, language) == s]
+        # A handful of strings are legitimately identical after translation
+        # (bare formulae, for instance), so compare against the pack directly.
+        from services.translation import pack
+
+        uncovered = [s for s in sources if s not in pack.load(language)]
+        if uncovered:
+            short[language] = len(uncovered)
+    assert not short, (
+        f"languages with uncovered strings: {short}. "
+        f"Re-run tools/build_translation_pack.py --prune"
+    )
+
+
+def test_a_whole_lesson_is_taught_in_every_language_with_no_api_key():
+    """End to end: plan a lesson in each language and check it is not English."""
+    from services.planner import plan_lesson
+
+    english = plan_lesson(_learner("english"), ingest_topic("Ohm's Law"))
+    baseline = {s["narration"] for s in english["scenes"]}
+
+    for language in EXTENDED:
+        plan = plan_lesson(_learner(language), ingest_topic("Ohm's Law"))
+        narrations = [s["narration"] for s in plan["scenes"]]
+        assert narrations, f"{language} produced no scenes"
+        untranslated = [n for n in narrations if n in baseline]
+        assert not untranslated, (
+            f"{language} served {len(untranslated)} scene(s) in English"
+        )
+
+
+def test_formulae_survive_in_every_language_with_no_api_key():
+    """A localised numeral in I = V/R teaches the wrong arithmetic."""
+    from services.planner import plan_lesson
+
+    for language in EXTENDED:
+        plan = plan_lesson(_learner(language), ingest_topic("Ohm's Law"))
+        ohm = next(s for s in plan["scenes"] if s["conceptId"] == "ohms-law")
+        flat = ohm["narration"].replace(" ", "")
+        assert "V=IxR" in flat, f"{language} lost V = I x R: {ohm['narration']}"
+
+
+def test_the_quiz_is_fully_translated_in_every_language_with_no_api_key():
+    from services.assessment import build_quiz, grade_quiz
+    from services.planner import plan_lesson
+
+    english = build_quiz(
+        plan_lesson(_learner("english"), ingest_topic("Ohm's Law"))["scenes"],
+        "english",
+    )
+    english_prompts = {q["prompt"] for q in english["questions"]}
+
+    for language in EXTENDED:
+        scenes = plan_lesson(_learner(language), ingest_topic("Ohm's Law"))["scenes"]
+        quiz = build_quiz(scenes, language)
+        assert quiz["questions"], f"{language} produced no quiz"
+        for question in quiz["questions"]:
+            assert question["prompt"] not in english_prompts, (
+                f"{language} asked a question in English: {question['prompt']}"
+            )
+        # And the correction a learner sees after a wrong answer.
+        graded = grade_quiz(
+            [{"questionId": "q-ohms-mcq", "response": "b"}], language
+        )
+        explanation = graded["results"][0]["explanation"]
+        assert "V / R" in explanation or "V/R" in explanation

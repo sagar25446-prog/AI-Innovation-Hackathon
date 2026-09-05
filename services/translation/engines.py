@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import urllib.parse
 import urllib.request
 from typing import Protocol
@@ -64,6 +65,90 @@ MT_LANGUAGE_CODES = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Formula masking
+# ---------------------------------------------------------------------------
+# A translator has no idea it is handling a physics lesson. Asked for Nepali,
+# it renders "a 12 V battery" as "१२ वी ब्याट्री" - correct Nepali, and wrong
+# physics teaching, because the learner is about to substitute that number
+# into I = V / R. Politely asking the model not to (which is all the prompt
+# could do) worked for Gemini and not for a general MT endpoint.
+#
+# So the protected spans are lifted out before translation and put back
+# afterwards. The translator never sees them and cannot localise what it never
+# saw. Sentinels are pure ASCII letters: digits get converted to local
+# numerals by exactly the engines this is defending against.
+
+PROTECTED_PATTERN = re.compile(
+    r"""
+      \b[A-Za-z]\s*=\s*[^,.;:!?]+                          # I = V / R = 12 / 4 = 3 A
+    | \b\d+(?:\.\d+)?\s*(?:ohms?|volts?|amperes?|amps?)\b  # 4 ohm
+    | \b\d+(?:\.\d+)?\s*[A-ZΩ]\b                           # 12 V, 4 ohm-symbol
+    | \b\d+(?:\.\d+)?\b                                    # a bare quantity
+    """,
+    re.VERBOSE,
+)
+
+_SENTINEL_PREFIX = "ZQX"
+
+
+def _sentinel(index: int) -> str:
+    """A translator-proof placeholder: ZQXA, ZQXB, ... ZQXZ, ZQXAA."""
+    letters = ""
+    remaining = index
+    while True:
+        letters = chr(ord("A") + remaining % 26) + letters
+        remaining = remaining // 26 - 1
+        if remaining < 0:
+            break
+    return _SENTINEL_PREFIX + letters
+
+
+def mask_protected(text: str) -> tuple[str, list[str]]:
+    """Replace equations, quantities and bare numbers with sentinels."""
+    tokens: list[str] = []
+
+    def swap(match: re.Match) -> str:
+        whole = match.group(0)
+        token = whole.rstrip()
+        tokens.append(token)
+        # Keep any trailing space the match swallowed, so the sentence still
+        # reads correctly to the translator.
+        return _sentinel(len(tokens) - 1) + whole[len(token) :]
+
+    return PROTECTED_PATTERN.sub(swap, text), tokens
+
+
+def restore_protected(text: str, tokens: list[str]) -> str:
+    """Put the original spans back, exactly as they were written.
+
+    Longest sentinel first, so restoring ZQXA cannot corrupt ZQXAA.
+    """
+    for index in sorted(range(len(tokens)), key=lambda i: -len(_sentinel(i))):
+        text = text.replace(_sentinel(index), tokens[index])
+    return text
+
+
+def _translate_masked(translate, text: str, language: str) -> str | None:
+    """Run one translation with the protected spans lifted out and restored.
+
+    Returns None when a sentinel did not survive the round trip: the engine
+    dropped or mangled it, so the result cannot be trusted to carry the
+    formula and the next engine should get a turn.
+    """
+    masked, tokens = mask_protected(text)
+    if not tokens:
+        return translate(masked)
+
+    result = translate(masked)
+    if not result:
+        return None
+    if any(_sentinel(i) not in result for i in range(len(tokens))):
+        logger.debug("Sentinel lost translating to %s; discarding", language)
+        return None
+    return restore_protected(result, tokens)
+
+
 class TranslationEngine(Protocol):
     """Anything that can turn one English string into another language."""
 
@@ -86,7 +171,7 @@ class GeminiEngine:
             return False
         return bool(gemini_available())
 
-    def translate(self, text: str, language: str) -> str | None:
+    def _translate_raw(self, text: str, language: str) -> str | None:
         try:
             from services.llm import _generate_text
         except ImportError:
@@ -109,6 +194,11 @@ class GeminiEngine:
         out = (out or "").strip()
         return out or None
 
+    def translate(self, text: str, language: str) -> str | None:
+        return _translate_masked(
+            lambda masked: self._translate_raw(masked, language), text, language
+        )
+
     def translate_batch(self, texts: list[str], language: str) -> list[str] | None:
         """Translate many strings in one request.
 
@@ -123,7 +213,14 @@ class GeminiEngine:
 
         from services.translation import _parse_json_array, language_name
 
-        numbered = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(texts))
+        masks = {}
+        masked_texts = []
+        for source in texts:
+            masked, tokens = mask_protected(source)
+            masks[source] = tokens
+            masked_texts.append(masked)
+
+        numbered = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(masked_texts))
         prompt = (
             f"You are a professional translator for an Indian school. Translate "
             f"each numbered line below into {language_name(language)}.\n"
@@ -148,7 +245,17 @@ class GeminiEngine:
                 len(texts),
             )
             return None
-        return [(p or "").strip() for p in parsed]
+
+        # Put each string's protected spans back, and drop any reply that lost
+        # one rather than letting a localised numeral through.
+        restored: list[str] = []
+        for source, candidate in zip(texts, parsed):
+            tokens = masks[source]
+            value = (candidate or "").strip()
+            if tokens and any(_sentinel(i) not in value for i in range(len(tokens))):
+                value = ""
+            restored.append(restore_protected(value, tokens) if value else "")
+        return restored
 
 
 class PublicMTEngine:
@@ -177,6 +284,13 @@ class PublicMTEngine:
         )
 
     def translate(self, text: str, language: str) -> str | None:
+        if language not in MT_LANGUAGE_CODES:
+            return None
+        return _translate_masked(
+            lambda masked: self._translate_raw(masked, language), text, language
+        )
+
+    def _translate_raw(self, text: str, language: str) -> str | None:
         code = MT_LANGUAGE_CODES.get(language)
         if not code:
             return None
@@ -211,8 +325,11 @@ def default_engines() -> list[TranslationEngine]:
 
 __all__ = [
     "GeminiEngine",
+    "PROTECTED_PATTERN",
     "MT_LANGUAGE_CODES",
     "PublicMTEngine",
     "TranslationEngine",
     "default_engines",
+    "mask_protected",
+    "restore_protected",
 ]
