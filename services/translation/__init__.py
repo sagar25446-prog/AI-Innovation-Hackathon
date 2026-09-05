@@ -44,6 +44,7 @@ CORE_LANGUAGES = ("english", "hindi", "hinglish")
 # UI option lists, so keep it stable and alphabetical after the core three.
 SUPPORTED_LANGUAGES = CORE_LANGUAGES + (
     "bengali",
+    "bhojpuri",
     "gujarati",
     "kannada",
     "malayalam",
@@ -65,6 +66,7 @@ LANGUAGE_NAMES = {
     "hindi": "Hindi",
     "hinglish": "Hinglish",
     "bengali": "Bengali",
+    "bhojpuri": "Bhojpuri",
     "gujarati": "Gujarati",
     "kannada": "Kannada",
     "malayalam": "Malayalam",

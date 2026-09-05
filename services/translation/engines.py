@@ -50,6 +50,7 @@ _PRESERVE_RULE = (
 # ISO-639-1 codes for the public MT endpoint. Keyed by GuruFlow language id.
 MT_LANGUAGE_CODES = {
     "bengali": "bn",
+    "bhojpuri": "bho",
     "gujarati": "gu",
     "kannada": "kn",
     "malayalam": "ml",
@@ -81,27 +82,26 @@ MT_LANGUAGE_CODES = {
 
 PROTECTED_PATTERN = re.compile(
     r"""
-      \b[A-Za-z]\s*=\s*[^,.;:!?]+                          # I = V / R = 12 / 4 = 3 A
+      \b[A-Za-z]\s*=\s*[A-Za-z0-9.^]+                      # V = IR, I = V
+        (?:\s*[-+*/x×]\s*[A-Za-z0-9.^]+)*                  #   ... x R, / R
+        (?:\s*=\s*[A-Za-z0-9.^]+(?:\s*[-+*/x×]\s*[A-Za-z0-9.^]+)*)*  # ... = 12 / 4 = 3
+        (?:\s*[A-ZΩ]\b)?                                 # trailing unit: 3 A
     | \b\d+(?:\.\d+)?\s*(?:ohms?|volts?|amperes?|amps?)\b  # 4 ohm
-    | \b\d+(?:\.\d+)?\s*[A-ZΩ]\b                           # 12 V, 4 ohm-symbol
+    | \b\d+(?:\.\d+)?\s*[A-ZΩ]\b                           # 12 V
     | \b\d+(?:\.\d+)?\b                                    # a bare quantity
     """,
     re.VERBOSE,
 )
 
-_SENTINEL_PREFIX = "ZQX"
-
-
 def _sentinel(index: int) -> str:
-    """A translator-proof placeholder: ZQXA, ZQXB, ... ZQXZ, ZQXAA."""
-    letters = ""
-    remaining = index
-    while True:
-        letters = chr(ord("A") + remaining % 26) + letters
-        remaining = remaining // 26 - 1
-        if remaining < 0:
-            break
-    return _SENTINEL_PREFIX + letters
+    """A translator-proof placeholder: {{0}}, {{1}}, ...
+
+    An ASCII-letter marker was tried first and does not survive: asked for
+    Bhojpuri, the engine helpfully transliterates "ZQXA" into Devanagari as
+    "जेडक्यूएक्सए", the sentinel is gone, and the translation is discarded.
+    Double braces are left alone by every engine tested, digits included.
+    """
+    return "{{" + str(index) + "}}"
 
 
 def mask_protected(text: str) -> tuple[str, list[str]]:
@@ -110,7 +110,11 @@ def mask_protected(text: str) -> tuple[str, list[str]]:
 
     def swap(match: re.Match) -> str:
         whole = match.group(0)
-        token = whole.rstrip()
+        # Trailing whitespace and sentence-final full stops stay in the text:
+        # a decimal point inside 3.5 belongs to the number, but the one ending
+        # "V = I x R." belongs to the sentence, and swallowing it leaves the
+        # translator with no punctuation to work from.
+        token = whole.rstrip(" .")
         tokens.append(token)
         # Keep any trailing space the match swallowed, so the sentence still
         # reads correctly to the translator.

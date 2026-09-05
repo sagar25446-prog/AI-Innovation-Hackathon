@@ -103,32 +103,47 @@ lip-synced human. A SadTalker integration ships behind
 plus a portrait you have rights to. Off by default; every failure path falls
 back to the drawn avatar.
 
-## 6. Languages: fifteen, but only three are hand-authored
+## 6. Languages: sixteen, but only three are hand-authored
 
 **English, Hindi and Hinglish** have hand-written narration, feedback,
 flashcards and depth notes throughout the concept catalogue. These are the
 languages the product was designed in, and they are the best experience.
 
-**Twelve more** - Bengali, Gujarati, Kannada, Malayalam, Marathi, Nepali, Odia,
-Punjabi, Sinhala, Tamil, Telugu and Urdu - are localised on demand by
-`services/translation`. What that means in practice:
+**Thirteen more** - Bengali, Bhojpuri, Gujarati, Kannada, Malayalam, Marathi,
+Nepali, Odia, Punjabi, Sinhala, Tamil, Telugu and Urdu - are resolved by
+`services/translation` through a four-tier stack:
 
-* **With a Gemini key:** a real translation, produced once and cached. The
-  prompt forbids touching numbers, units, variable letters and equations, so
-  `I = V/R` survives every language exactly.
-* **Offline:** the canonical English string is returned unchanged. A Tamil
-  learner still gets a complete lesson, voice and video - narrated in English.
-  That is a deliberate degradation, not a failure: a working English lesson
-  beats a blank scene or a crash.
+1. a per-process memory cache;
+2. the **shipped translation pack** in `data/translations/` - every fixed
+   string in the curated lessons, translated ahead of time and committed;
+3. a translation engine (Gemini for quality, a key-free public MT endpoint
+   when Gemini is absent or rate-limited), written back into the pack;
+4. the canonical English string, so nothing ever blanks or crashes.
 
-So "fifteen languages" is honest about *coverage*, not about *authoring depth*.
-Do not claim fifteen hand-written curricula.
+**This works with no API key and no internet.** Tier 2 is why: the demo path
+is committed data, not a live call. Tier 3 only handles lessons about
+*uploaded* material, which no pack could anticipate.
+
+Equations, quantities and bare numbers are lifted out of the text before
+translation and put back afterwards, so `I = V/R` and `12 V` are byte-identical
+in every language. The pack builder verifies this and refuses to write a
+translation that lost one.
+
+So "sixteen languages" is honest about *coverage*, not about *authoring depth*.
+Do not claim sixteen hand-written curricula.
 
 ### Voice
 
-Thirteen of the fifteen have a female edge-tts neural voice. **Odia and
-Punjabi have none**, and fall back to gTTS or captions-only. This is asserted
-in the tests so it cannot regress silently.
+Thirteen of the sixteen have a female edge-tts neural voice of their own.
+
+* **Odia** has neither an edge voice nor a gTTS voice, so it is
+  **captions-only**. The `/tts` endpoint returns 204 and the lesson continues.
+* **Punjabi** has no edge voice and falls back to gTTS.
+* **Bhojpuri** has no voice of its own and is read by the **Hindi** voice. It
+  is written in Devanagari and close enough to Hindi to be intelligible, but
+  it is not a Bhojpuri accent. This is recorded in
+  `services.voice.APPROXIMATE_VOICES` rather than hidden in the voice table,
+  and asserted in the tests.
 
 ## 7. Persistence
 

@@ -43,6 +43,10 @@ _DEFAULT_VOICES: dict[str, str | None] = {
     "hindi": "hi-IN-SwaraNeural",
     "hinglish": "hi-IN-SwaraNeural",
     "bengali": "bn-IN-TanishaaNeural",
+    # Bhojpuri has no neural voice of its own. It is written in Devanagari and
+    # is close enough to Hindi that the Hindi voice reads it intelligibly, so
+    # a borrowed voice beats no voice - see _APPROXIMATE_VOICES below.
+    "bhojpuri": "hi-IN-SwaraNeural",
     "gujarati": "gu-IN-DhwaniNeural",
     "kannada": "kn-IN-SapnaNeural",
     "malayalam": "ml-IN-SobhanaNeural",
@@ -68,6 +72,7 @@ GTTS_LANG_MAP: dict[str, str] = {
     "hindi": "hi",
     "hinglish": "hi",
     "bengali": "bn",
+    "bhojpuri": "hi",
     "gujarati": "gu",
     "kannada": "kn",
     "malayalam": "ml",
@@ -80,6 +85,16 @@ GTTS_LANG_MAP: dict[str, str] = {
     "telugu": "te",
     "urdu": "ur",
 }
+
+# Languages read aloud in a *related* language's voice because they have no
+# neural voice of their own. This is an approximation and it is recorded here
+# rather than hidden inside the voice table: Bhojpuri in a Hindi voice is
+# intelligible to a Bhojpuri speaker, but it is not a Bhojpuri accent, and a
+# judge or a teacher deserves to know which is which.
+APPROXIMATE_VOICES: dict[str, str] = {
+    "bhojpuri": "hindi",
+}
+
 
 # edge-tts reports offsets in 100-nanosecond ticks.
 _TICKS_PER_SECOND = 10_000_000

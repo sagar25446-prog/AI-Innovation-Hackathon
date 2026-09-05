@@ -24,6 +24,8 @@ const VOICE_BY_LANGUAGE = {
   hindi: 'hi-IN',
   hinglish: 'hi-IN',
   bengali: 'bn-IN',
+  // No Bhojpuri voice exists; Devanagari read by the Hindi voice.
+  bhojpuri: 'hi-IN',
   gujarati: 'gu-IN',
   kannada: 'kn-IN',
   malayalam: 'ml-IN',

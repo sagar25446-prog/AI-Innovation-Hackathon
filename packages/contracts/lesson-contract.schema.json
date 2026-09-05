@@ -6,129 +6,353 @@
   "definitions": {
     "LearnerProfile": {
       "type": "object",
-      "required": ["level", "language", "availableMinutes", "goal"],
+      "required": [
+        "level",
+        "language",
+        "availableMinutes",
+        "goal"
+      ],
       "properties": {
-        "level": { "type": "string", "enum": ["beginner", "intermediate", "advanced"] },
-        "language": { "type": "string", "enum": ["english", "hindi", "hinglish", "bengali", "gujarati", "kannada", "malayalam", "marathi", "nepali", "odia", "punjabi", "sinhala", "tamil", "telugu", "urdu"] },
-        "availableMinutes": { "type": "integer", "minimum": 1, "maximum": 10080 },
-        "goal": { "type": "string", "minLength": 1 },
-        "priorKnowledge": { "type": "string" }
+        "level": {
+          "type": "string",
+          "enum": [
+            "beginner",
+            "intermediate",
+            "advanced"
+          ]
+        },
+        "language": {
+          "type": "string",
+          "enum": [
+            "english",
+            "hindi",
+            "hinglish",
+            "bengali",
+            "bhojpuri",
+            "gujarati",
+            "kannada",
+            "malayalam",
+            "marathi",
+            "nepali",
+            "odia",
+            "punjabi",
+            "sinhala",
+            "tamil",
+            "telugu",
+            "urdu"
+          ]
+        },
+        "availableMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10080
+        },
+        "goal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "priorKnowledge": {
+          "type": "string"
+        }
       },
       "additionalProperties": true
     },
     "SourceCitation": {
       "type": "object",
-      "required": ["documentId", "pageOrSlide", "excerpt"],
+      "required": [
+        "documentId",
+        "pageOrSlide",
+        "excerpt"
+      ],
       "properties": {
-        "documentId": { "type": "string", "minLength": 1 },
-        "pageOrSlide": { "type": "integer", "minimum": 1 },
-        "heading": { "type": "string" },
-        "excerpt": { "type": "string", "minLength": 1 }
+        "documentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageOrSlide": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "heading": {
+          "type": "string"
+        },
+        "excerpt": {
+          "type": "string",
+          "minLength": 1
+        }
       },
       "additionalProperties": true
     },
     "VisualSpec": {
       "type": "object",
-      "required": ["type", "data"],
+      "required": [
+        "type",
+        "data"
+      ],
       "properties": {
-        "type": { "type": "string", "enum": ["circuit", "equation", "graph", "timeline", "diagram", "code_trace", "concept_map"] },
-        "data": { "type": "object" }
+        "type": {
+          "type": "string",
+          "enum": [
+            "circuit",
+            "equation",
+            "graph",
+            "timeline",
+            "diagram",
+            "code_trace",
+            "concept_map"
+          ]
+        },
+        "data": {
+          "type": "object"
+        }
       },
       "additionalProperties": true
     },
     "Scene": {
       "type": "object",
-      "required": ["id", "conceptId", "objective", "narration", "visual", "citations", "durationSeconds"],
+      "required": [
+        "id",
+        "conceptId",
+        "objective",
+        "narration",
+        "visual",
+        "citations",
+        "durationSeconds"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "conceptId": { "type": "string", "minLength": 1 },
-        "objective": { "type": "string", "minLength": 1 },
-        "narration": { "type": "string", "minLength": 1 },
-        "visual": { "$ref": "#/definitions/VisualSpec" },
-        "citations": { "type": "array", "items": { "$ref": "#/definitions/SourceCitation" } },
-        "durationSeconds": { "type": "integer", "minimum": 1 },
-        "checkpointId": { "type": "string" }
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conceptId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "objective": {
+          "type": "string",
+          "minLength": 1
+        },
+        "narration": {
+          "type": "string",
+          "minLength": 1
+        },
+        "visual": {
+          "$ref": "#/definitions/VisualSpec"
+        },
+        "citations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SourceCitation"
+          }
+        },
+        "durationSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "checkpointId": {
+          "type": "string"
+        }
       },
       "additionalProperties": true
     },
     "LessonPlan": {
       "type": "object",
-      "required": ["id", "learner", "scenes"],
+      "required": [
+        "id",
+        "learner",
+        "scenes"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "learner": { "$ref": "#/definitions/LearnerProfile" },
-        "scenes": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/Scene" } }
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "learner": {
+          "$ref": "#/definitions/LearnerProfile"
+        },
+        "scenes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/Scene"
+          }
+        }
       },
       "additionalProperties": true
     },
     "EvaluationResult": {
       "type": "object",
-      "required": ["correct", "mastery", "feedback", "nextAction"],
+      "required": [
+        "correct",
+        "mastery",
+        "feedback",
+        "nextAction"
+      ],
       "properties": {
-        "correct": { "type": "boolean" },
-        "mastery": { "type": "number", "minimum": 0, "maximum": 1 },
-        "misconception": { "type": "string" },
-        "feedback": { "type": "string", "minLength": 1 },
-        "nextAction": { "type": "string", "enum": ["advance", "repair", "retry"] },
-        "repairScene": { "$ref": "#/definitions/Scene" }
+        "correct": {
+          "type": "boolean"
+        },
+        "mastery": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "misconception": {
+          "type": "string"
+        },
+        "feedback": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nextAction": {
+          "type": "string",
+          "enum": [
+            "advance",
+            "repair",
+            "retry"
+          ]
+        },
+        "repairScene": {
+          "$ref": "#/definitions/Scene"
+        }
       },
       "additionalProperties": true
     },
     "LearningReport": {
       "type": "object",
-      "required": ["studentId", "lessonId", "score"],
+      "required": [
+        "studentId",
+        "lessonId",
+        "score"
+      ],
       "properties": {
-        "studentId": { "type": "string", "minLength": 1 },
-        "lessonId": { "type": "string", "minLength": 1 },
-        "score": { "type": "number", "minimum": 0, "maximum": 1 },
-        "strongConcepts": { "type": "array", "items": { "type": "string" } },
-        "weakConcepts": { "type": "array", "items": { "type": "string" } },
+        "studentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lessonId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "strongConcepts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "weakConcepts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "misconceptions": {
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
-              "id": { "type": "string" },
-              "status": { "type": "string" },
-              "concept": { "type": "string" }
+              "id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "concept": {
+                "type": "string"
+              }
             }
           }
         },
-        "revisionActions": { "type": "array", "items": { "type": "string" } },
+        "revisionActions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "nextTopic": {
           "type": "object",
           "properties": {
-            "id": { "type": "string" },
-            "title": { "type": "string" }
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
           }
         },
-        "totalTimeSeconds": { "type": "integer", "minimum": 0 },
-        "scenesCompleted": { "type": "integer", "minimum": 0 },
-        "checkpointsPassed": { "type": "integer", "minimum": 0 },
-        "checkpointsFailed": { "type": "integer", "minimum": 0 }
+        "totalTimeSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scenesCompleted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "checkpointsPassed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "checkpointsFailed": {
+          "type": "integer",
+          "minimum": 0
+        }
       },
       "additionalProperties": true
     },
     "CheckpointSubmission": {
       "type": "object",
-      "required": ["checkpointId", "studentAnswer"],
+      "required": [
+        "checkpointId",
+        "studentAnswer"
+      ],
       "properties": {
-        "lessonId": { "type": "string" },
-        "checkpointId": { "type": "string", "minLength": 1 },
-        "studentAnswer": { "type": "string", "minLength": 1 },
-        "expectedEvaluation": { "$ref": "#/definitions/EvaluationResult" }
+        "lessonId": {
+          "type": "string"
+        },
+        "checkpointId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "studentAnswer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expectedEvaluation": {
+          "$ref": "#/definitions/EvaluationResult"
+        }
       },
       "additionalProperties": true
     }
   },
   "$defs": {
-    "LearnerProfile": { "$ref": "#/definitions/LearnerProfile" },
-    "SourceCitation": { "$ref": "#/definitions/SourceCitation" },
-    "VisualSpec": { "$ref": "#/definitions/VisualSpec" },
-    "Scene": { "$ref": "#/definitions/Scene" },
-    "LessonPlan": { "$ref": "#/definitions/LessonPlan" },
-    "EvaluationResult": { "$ref": "#/definitions/EvaluationResult" },
-    "LearningReport": { "$ref": "#/definitions/LearningReport" },
-    "CheckpointSubmission": { "$ref": "#/definitions/CheckpointSubmission" }
+    "LearnerProfile": {
+      "$ref": "#/definitions/LearnerProfile"
+    },
+    "SourceCitation": {
+      "$ref": "#/definitions/SourceCitation"
+    },
+    "VisualSpec": {
+      "$ref": "#/definitions/VisualSpec"
+    },
+    "Scene": {
+      "$ref": "#/definitions/Scene"
+    },
+    "LessonPlan": {
+      "$ref": "#/definitions/LessonPlan"
+    },
+    "EvaluationResult": {
+      "$ref": "#/definitions/EvaluationResult"
+    },
+    "LearningReport": {
+      "$ref": "#/definitions/LearningReport"
+    },
+    "CheckpointSubmission": {
+      "$ref": "#/definitions/CheckpointSubmission"
+    }
   }
 }

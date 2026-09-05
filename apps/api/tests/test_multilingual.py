@@ -1,4 +1,4 @@
-"""The fifteen teaching languages, end to end.
+"""The sixteen teaching languages, end to end.
 
 Everything here runs **offline**: `conftest.py` disables both the LLM and the
 public MT engine for unmarked tests. What is left is the shipped translation
@@ -8,7 +8,7 @@ no internet - not a best case that depends on a live service.
 
 Two guarantees are being pinned here:
 
-* a curated lesson is **really translated** in all fifteen languages, from the
+* a curated lesson is **really translated** in all sixteen languages, from the
   pack, with no network at all; and
 * a string the pack does not carry degrades to English rather than crashing or
   rendering blank.
@@ -67,10 +67,11 @@ def _learner(language, **overrides):
 # ---------------------------------------------------------------------------
 
 
-def test_fifteen_languages_three_of_them_hand_authored():
-    assert len(translation.SUPPORTED_LANGUAGES) == 15
+def test_sixteen_languages_three_of_them_hand_authored():
+    assert len(translation.SUPPORTED_LANGUAGES) == 16
     assert CORE == ("english", "hindi", "hinglish")
-    assert len(EXTENDED) == 12
+    assert len(EXTENDED) == 13
+    assert "bhojpuri" in EXTENDED
 
 
 def test_every_language_has_a_display_name():
@@ -117,7 +118,7 @@ def test_a_string_no_engine_can_reach_falls_back_to_english():
 
 
 def test_the_shipped_pack_really_translates_every_extended_language():
-    """The headline claim: fifteen languages, offline, no key, no network.
+    """The headline claim: sixteen languages, offline, no key, no network.
 
     This is the regression guard for the bug that made the feature look fake -
     Gemini's free tier ran out, every extended language quietly served English,
@@ -302,6 +303,16 @@ def test_the_two_languages_without_edge_voices_are_the_expected_ones():
     assert missing == ["odia", "punjabi"]
 
 
+def test_a_borrowed_voice_is_declared_rather_than_hidden():
+    """Bhojpuri is read by the Hindi voice; that must be recorded, not implied."""
+    from services.voice import APPROXIMATE_VOICES, VOICE_MAP
+
+    assert APPROXIMATE_VOICES["bhojpuri"] == "hindi"
+    assert VOICE_MAP["bhojpuri"] == VOICE_MAP["hindi"]
+    for language in APPROXIMATE_VOICES:
+        assert language in translation.SUPPORTED_LANGUAGES
+
+
 def test_voice_ids_are_well_formed():
     import re
 
@@ -445,7 +456,7 @@ def test_batch_skips_strings_already_cached(monkeypatch):
 # ---------------------------------------------------------------------------
 # These run with the LLM disabled and the MT engine disabled (conftest), so
 # they assert exactly what a judge gets on a fresh clone with no API key and
-# no internet: fifteen working teaching languages, from committed data.
+# no internet: sixteen working teaching languages, from committed data.
 
 
 def test_every_language_is_fully_covered_with_no_api_key():
@@ -530,3 +541,33 @@ def test_the_quiz_is_fully_translated_in_every_language_with_no_api_key():
         )
         explanation = graded["results"][0]["explanation"]
         assert "V / R" in explanation or "V/R" in explanation
+
+
+# ---------------------------------------------------------------------------
+# The /tts endpoint
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("language", translation.SUPPORTED_LANGUAGES)
+def test_the_tts_endpoint_never_returns_a_server_error(client, language):
+    """No teaching language may 500 when asked to speak.
+
+    The endpoint used to call edge-tts directly with ``VOICE_MAP[language]``.
+    Odia and Punjabi have no edge voice, so that value is None, and
+    ``.get(language, default)`` does not save you when the key exists with a
+    None value: edge-tts raised "voice must be str" and the endpoint returned
+    500. Two of the teaching languages had no voice at all.
+
+    204 is a valid answer here - it means captions-only for a language with no
+    provider. 500 is not.
+    """
+    response = client.post("/tts", json={"text": "Ohm ka niyam", "language": language})
+    assert response.status_code in (200, 204, 503), (
+        f"{language} -> {response.status_code}: {response.text[:200]}"
+    )
+    if response.status_code == 200:
+        assert response.content, f"{language} returned 200 with no audio"
+
+
+def test_the_tts_endpoint_still_rejects_empty_text(client):
+    assert client.post("/tts", json={"text": "  ", "language": "hindi"}).status_code == 400

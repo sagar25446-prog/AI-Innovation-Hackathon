@@ -42,11 +42,11 @@ Sinhala, Tamil, Telugu, Urdu - are localised on demand by
 the English source offline so a lesson always renders.
 
 Equations are never translated: the prompt pins numbers, units, variable
-letters and expressions, so `I = V/R` is identical in all fifteen.
+letters and expressions, so `I = V/R` is identical in all sixteen.
 
 Switch language mid-lesson and mastery, attempts and diagnosed misconceptions
-all survive. See [known limitations](docs/KNOWN_LIMITATIONS.md#6-languages-fifteen-but-only-three-are-hand-authored)
-for what "fifteen" does and does not mean.
+all survive. See [known limitations](docs/KNOWN_LIMITATIONS.md#6-languages-sixteen-but-only-three-are-hand-authored)
+for what "sixteen" does and does not mean.
 
 ## Lesson planning: curated first, LLM for the rest
 

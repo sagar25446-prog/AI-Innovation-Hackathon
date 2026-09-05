@@ -63,6 +63,7 @@ from services.planner.learning_path import build_learning_path  # noqa: E402
 from services.planner.study_plan import build_study_plan  # noqa: E402
 from services.qa import answer_question  # noqa: E402
 from services.translation import SUPPORTED_LANGUAGES  # noqa: E402
+from services import voice as voice_service  # noqa: E402
 from services.voice import VOICE_MAP  # noqa: E402
 from services import video as video_service  # noqa: E402
 
@@ -570,26 +571,37 @@ def student_study_plan(student_id: str) -> dict[str, Any]:
 
 @app.post("/tts")
 async def text_to_speech(body: dict[str, str]) -> Response:
-    """Generate speech audio from text using edge-tts (free, no API key)."""
+    """Speak one line of narration in the learner's language.
+
+    This used to call edge-tts directly and pass it ``VOICE_MAP[language]``.
+    For Odia and Punjabi that value is None - they have no edge neural voice -
+    and ``.get(language, default)`` does not help, because the key *exists*
+    with a None value. edge-tts then raised "voice must be str" and the
+    endpoint returned a 500, so two of the teaching languages had no voice at
+    all rather than a degraded one.
+
+    It now goes through ``services.voice``, which is the single place that
+    knows the fallback chain: edge-tts, then gTTS, then captions-only. Adding
+    a language no longer means remembering to update this endpoint too.
+    """
     text = body.get("text", "").strip()
     language = body.get("language", "hinglish")
     if not text:
         raise HTTPException(status_code=400, detail="Text is required")
 
-    voice = VOICE_MAP.get(language, VOICE_MAP["hinglish"])
-
-    try:
-        import edge_tts
-        communicate = edge_tts.Communicate(text, voice)
-        tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-        tmp_path = tmp.name
-        tmp.close()
-        await communicate.save(tmp_path)
-        return FileResponse(tmp_path, media_type="audio/mpeg", filename="speech.mp3")
-    except ImportError:
-        raise HTTPException(status_code=503, detail="edge-tts not installed. Run: pip install edge-tts")
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(exc)}")
+    result = await voice_service.synthesize_async(text, language)
+    if not result.has_audio:
+        # A language with no voice provider at all. 204 rather than 500: the
+        # client keeps the captions and the lesson carries on.
+        return Response(status_code=204)
+    return Response(
+        content=result.audio,
+        media_type=result.mime_type,
+        headers={
+            "X-Voice-Provider": result.provider,
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
