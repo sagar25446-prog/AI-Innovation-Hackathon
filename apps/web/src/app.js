@@ -309,6 +309,19 @@ const video = {
   poll: null,
 };
 
+/**
+ * True while the rendered lesson video owns the narration.
+ *
+ * The scene video is muxed with the same edge-tts narration the browser-side
+ * voice track speaks, so leaving both on played the lesson twice, a beat
+ * apart. Exactly one source narrates at a time: the video when it is on, the
+ * voice track otherwise. `state.voiceOn` stays untouched so the learner's
+ * preference survives toggling the video off again.
+ */
+function videoOwnsNarration() {
+  return video.enabled;
+}
+
 async function requestSceneVideo(scene) {
   const response = await fetch('/video/render', {
     method: 'POST',
@@ -336,6 +349,24 @@ function setVideoButton(status) {
   button.setAttribute('aria-pressed', String(video.enabled));
 }
 
+/** Keep the voice button honest about what the learner will actually hear. */
+function syncVoiceButton() {
+  const button = $('voice-btn');
+  if (!button) return;
+  if (!state.media || !state.media.voiceAvailable) {
+    button.textContent = 'Voice unavailable';
+    button.disabled = true;
+    button.removeAttribute('title');
+    return;
+  }
+  button.disabled = false;
+  button.textContent = state.voiceOn ? 'Voice on' : 'Voice off';
+  button.setAttribute('aria-pressed', String(state.voiceOn));
+  button.title = videoOwnsNarration()
+    ? 'The lesson video carries the narration; this applies when the video is off.'
+    : '';
+}
+
 function showVideoStage(show) {
   const stage = $('classroom-stage');
   const layout = document.querySelector('.classroom-layout');
@@ -345,7 +376,8 @@ function showVideoStage(show) {
   else if (stage) stage.hidden = show;
 
   if (show) {
-    stopTimer();                     // the video carries its own narration
+    stopTimer();                     // stops the clock and the voice track;
+                                     // the video carries its own narration
     $('captions').hidden = true;
   } else {
     $('captions').hidden = false;
@@ -517,7 +549,8 @@ function runCaptions(scene, captions) {
     const video = document.createElement('video');
     video.src = mediaResult.teacherPanel.url;
     video.autoplay = true;
-    video.muted = false;
+    // Hidden behind the video stage, this clip would still be audible.
+    video.muted = videoOwnsNarration();
     video.loop = false;
     video.style.width = '100%';
     video.style.height = '100%';
@@ -529,7 +562,7 @@ function runCaptions(scene, captions) {
     mouth.classList.add('speaking');
   }
 
-  if (state.voiceOn) {
+  if (state.voiceOn && !videoOwnsNarration()) {
     state.media.tts.speak(scene.narration, state.plan.learner.language, {
       onStart: () => mouth.classList.add('speaking'),
       onEnd: () => mouth.classList.remove('speaking'),
@@ -1498,6 +1531,7 @@ function init() {
   $('start-lesson').addEventListener('click', () => {
     showScreen('classroom');
     $('lang-switch').value = state.plan.learner.language;
+    syncVoiceButton();
     startScene();
     // Warm every scene's video (and both repair scenes) in the background so
     // the flagship moment never waits on a render.
@@ -1513,9 +1547,13 @@ function init() {
     video.enabled = !video.enabled;
     showVideoStage(video.enabled);
     setVideoButton('ready');
+    syncVoiceButton();
     if (video.enabled) {
       const player = $('lesson-video');
       if (player && player.src) player.play().catch(() => {});
+    } else {
+      // Narration goes back to the voice track, and the scene clock with it.
+      startScene();
     }
   });
 
@@ -1534,14 +1572,9 @@ function init() {
 
   $('voice-btn').addEventListener('click', () => {
     state.voiceOn = state.media.setVoiceEnabled(!state.voiceOn);
-    const button = $('voice-btn');
-    button.textContent = state.voiceOn ? 'Voice on' : 'Voice off';
-    button.setAttribute('aria-pressed', String(state.voiceOn));
+    if (!state.voiceOn) state.media.tts.stop();
+    syncVoiceButton();
     updateMediaBadge(currentScene(), state.lastMedia);
-    if (!state.media.voiceAvailable) {
-      button.textContent = 'Voice unavailable';
-      button.disabled = true;
-    }
   });
 
   wireExtendedLanguages();
