@@ -60,42 +60,9 @@
       <div class="landing-visual" aria-hidden="true">
         <div class="lobby-card lobby-teacher">
           <div class="mini-avatar">
-            <svg viewBox="0 0 260 320" class="avatar-scene">
-              <defs>
-                <radialGradient id="laAura" cx="50%" cy="38%" r="75%">
-                  <stop offset="0%" stop-color="rgba(108,140,255,0.30)"/>
-                  <stop offset="100%" stop-color="rgba(108,140,255,0)"/>
-                </radialGradient>
-                <linearGradient id="laSkin" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stop-color="#efbd8e"/>
-                  <stop offset="100%" stop-color="#c98f68"/>
-                </linearGradient>
-                <linearGradient id="laCoat" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#7c63e0"/>
-                  <stop offset="100%" stop-color="#54409e"/>
-                </linearGradient>
-              </defs>
-              <rect x="0" y="0" width="260" height="320" rx="26" fill="url(#laAura)"/>
-              <path d="M55 320 Q65 240 130 240 Q195 240 205 320 Z" fill="url(#laCoat)"/>
-              <rect x="112" y="188" width="36" height="54" rx="10" fill="#c98f68"/>
-              <ellipse cx="130" cy="128" rx="54" ry="60" fill="url(#laSkin)"/>
-              <ellipse cx="80" cy="138" rx="9" ry="13" fill="#c98f68"/>
-              <ellipse cx="180" cy="138" rx="9" ry="13" fill="#c98f68"/>
-              <path d="M72 124 Q74 66 130 66 Q186 66 188 124 L188 96 Q140 60 92 92 Z" fill="#2b2f3d"/>
-              <path d="M74 92 Q90 66 130 66 Q170 66 186 92 Q130 78 74 92 Z" fill="#20242f"/>
-              <path d="M96 102 Q108 96 118 100" stroke="#7a5236" stroke-width="3" fill="none" stroke-linecap="round"/>
-              <path d="M142 100 Q152 96 164 102" stroke="#7a5236" stroke-width="3" fill="none" stroke-linecap="round"/>
-              <g class="avatar-eyes">
-                <ellipse cx="107" cy="120" rx="8" ry="9" fill="#fff"/>
-                <circle cx="107.5" cy="121" r="4.2" fill="#23272f"/>
-                <ellipse cx="153" cy="120" rx="8" ry="9" fill="#fff"/>
-                <circle cx="153.5" cy="121" r="4.2" fill="#23272f"/>
-              </g>
-              <path d="M128 124 Q124 140 129 142" stroke="#b97c55" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-              <g class="avatar-mouth" id="lobby-avatar-mouth">
-                <path d="M114 152 Q130 160 146 152 Q130 161 114 152 Z" fill="#7a3c33"/>
-              </g>
-            </svg>
+            <img src="/public/teacher-hero.jpg" alt="GuruFlow teacher"
+                 class="mini-avatar-photo" width="248" height="292"
+                 loading="eager" decoding="async" />
           </div>
           <div class="lobby-chat">
             <div class="lobby-bubble">Lagbhag sahi! Remember, when voltage is fixed, I = V ÷ R.</div>
@@ -461,66 +428,8 @@
       <div class="teacher-panel">
         <div id="teacher-visual" class="teacher-visual">
           <div class="avatar-fallback" aria-hidden="true">
-            <!-- Polished SVG teacher used whenever no cloud avatar is wired up. -->
-            <svg class="avatar-scene" viewBox="0 0 260 320" role="img" aria-label="GuruFlow teacher avatar">
-              <defs>
-                <radialGradient id="avatarAura" cx="50%" cy="38%" r="75%">
-                  <stop offset="0%" stop-color="rgba(108,140,255,0.28)"/>
-                  <stop offset="100%" stop-color="rgba(108,140,255,0)"/>
-                </radialGradient>
-                <linearGradient id="avatarSkin" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stop-color="#efbd8e"/>
-                  <stop offset="100%" stop-color="#c98f68"/>
-                </linearGradient>
-                <linearGradient id="avatarCoat" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#7c63e0"/>
-                  <stop offset="100%" stop-color="#54409e"/>
-                </linearGradient>
-              </defs>
-
-              <rect x="0" y="0" width="260" height="320" rx="26" fill="url(#avatarAura)"/>
-
-              <!-- Shoulders -->
-              <path d="M55 320 Q65 240 130 240 Q195 240 205 320 Z" fill="url(#avatarCoat)"/>
-              <path d="M100 320 Q120 265 130 262 L160 262 Q180 270 165 320 Z" fill="#efe9ff" opacity="0.18"/>
-
-              <!-- Neck -->
-              <rect x="112" y="188" width="36" height="54" rx="10" fill="#c98f68"/>
-
-              <!-- Head -->
-              <ellipse cx="130" cy="128" rx="54" ry="60" fill="url(#avatarSkin)"/>
-              <!-- Ears -->
-              <ellipse cx="80" cy="138" rx="9" ry="13" fill="#c98f68"/>
-              <ellipse cx="180" cy="138" rx="9" ry="13" fill="#c98f68"/>
-
-              <!-- Hair -->
-              <path d="M72 124 Q74 66 130 66 Q186 66 188 124 L188 96 Q140 60 92 92 Z" fill="#2b2f3d"/>
-              <path d="M74 92 Q90 66 130 66 Q170 66 186 92 Q130 78 74 92 Z" fill="#20242f"/>
-
-              <!-- Eyebrows -->
-              <path d="M96 102 Q108 96 118 100" stroke="#7a5236" stroke-width="3" fill="none" stroke-linecap="round"/>
-              <path d="M142 100 Q152 96 164 102" stroke="#7a5236" stroke-width="3" fill="none" stroke-linecap="round"/>
-
-              <!-- Eyes -->
-              <g class="avatar-eyes">
-                <ellipse cx="107" cy="120" rx="8" ry="9" fill="#ffffff"/>
-                <circle cx="107.5" cy="121" r="4.2" fill="#23272f"/>
-                <circle cx="109" cy="119" r="1.4" fill="#fff"/>
-                <ellipse cx="153" cy="120" rx="8" ry="9" fill="#ffffff"/>
-                <circle cx="153.5" cy="121" r="4.2" fill="#23272f"/>
-                <circle cx="155" cy="119" r="1.4" fill="#fff"/>
-              </g>
-
-              <!-- Nose -->
-              <path d="M128 124 Q124 140 129 142" stroke="#b97c55" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-
-              <!-- Mouth -->
-              <g class="avatar-mouth" id="avatar-mouth">
-                <path d="M114 152 Q130 160 146 152 Q130 161 114 152 Z" fill="#7a3c33"/>
-              </g>
-
-              <!-- Nameplate / live pill -->
-            </svg>
+            <img src="/public/teacher-hero.jpg" alt="GuruFlow teacher"
+                 class="mini-avatar-photo" style="width:100%;height:100%;object-fit:cover;border-radius:var(--radius-sm);" />
             <div class="avatar-nameplate">
               <span class="live-dot"></span> GuruFlow Teacher
             </div>
