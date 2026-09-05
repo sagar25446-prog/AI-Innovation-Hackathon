@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import sys
+import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -230,9 +231,24 @@ def test_teacher_uses_female_neural_voices():
     assert VOICE_MAP["english"] == "en-IN-NeerjaNeural"
     assert VOICE_MAP["hindi"] == "hi-IN-SwaraNeural"
     assert VOICE_MAP["hinglish"] == "hi-IN-SwaraNeural"
-    # The old male voices must not creep back in.
-    assert "Madhur" not in "".join(VOICE_MAP.values())
-    assert "Prabhat" not in "".join(VOICE_MAP.values())
+
+    # Odia and Punjabi map to None on purpose: edge-tts has no voice for them,
+    # so they fall back to gTTS or captions. Joining the raw values therefore
+    # raises TypeError - filter before joining.
+    configured = [voice for voice in VOICE_MAP.values() if voice]
+    assert len(configured) == len(VOICE_MAP) - 2
+
+    # The old male voices must not creep back in, in any language.
+    joined = "".join(configured)
+    assert "Madhur" not in joined
+    assert "Prabhat" not in joined
+
+    # Every configured voice is a real BCP-47 neural voice id.
+    for language, voice in VOICE_MAP.items():
+        if voice:
+            assert re.match(r"^[a-z]{2}-[A-Z]{2}-\w+Neural$", voice), (
+                f"{language} has a malformed voice id: {voice}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -545,3 +561,65 @@ def test_status_reports_failed_scenes_by_id(client):
 
 def test_status_404s_for_an_unknown_lesson(client):
     assert client.get("/lessons/nope/video/status").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# A dead render must not wedge the scene forever
+# ---------------------------------------------------------------------------
+
+
+def test_a_fresh_render_is_not_treated_as_stale():
+    import time as _time
+
+    video_service._STATUS["fresh"] = "rendering"
+    video_service._RENDER_STARTED["fresh"] = _time.time()
+    try:
+        assert video_service._is_stale_render("fresh") is False
+    finally:
+        video_service._STATUS.pop("fresh", None)
+        video_service._RENDER_STARTED.pop("fresh", None)
+
+
+def test_an_abandoned_render_goes_stale_so_it_can_be_retried():
+    """The bug: two repair scenes sat in "rendering" for half an hour.
+
+    render_in_background returned early on that status and prerender_lesson
+    would not re-queue it, so only a server restart recovered.
+    """
+    import time as _time
+
+    video_service._STATUS["old"] = "rendering"
+    video_service._RENDER_STARTED["old"] = (
+        _time.time() - video_service.STALE_RENDER_SECONDS - 1
+    )
+    try:
+        assert video_service._is_stale_render("old") is True
+    finally:
+        video_service._STATUS.pop("old", None)
+        video_service._RENDER_STARTED.pop("old", None)
+
+
+def test_a_rendering_mark_with_no_start_time_is_stale():
+    """Survives a status set before this bookkeeping existed."""
+    video_service._STATUS["untracked"] = "rendering"
+    video_service._RENDER_STARTED.pop("untracked", None)
+    try:
+        assert video_service._is_stale_render("untracked") is True
+    finally:
+        video_service._STATUS.pop("untracked", None)
+
+
+def test_a_finished_render_clears_its_start_time():
+    video_service._set_status("done", "rendering")
+    assert "done" in video_service._RENDER_STARTED
+    video_service._set_status("done", "ready")
+    assert "done" not in video_service._RENDER_STARTED
+    video_service._STATUS.pop("done", None)
+
+
+def test_only_rendering_can_be_stale():
+    video_service._STATUS["failedone"] = "failed:render"
+    try:
+        assert video_service._is_stale_render("failedone") is False
+    finally:
+        video_service._STATUS.pop("failedone", None)

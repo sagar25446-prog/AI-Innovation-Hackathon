@@ -50,7 +50,11 @@ export const CLIP_ROLES = Object.freeze([
 
 export const DEFAULT_CLIP_ROLE = 'idle';
 
-export const SUPPORTED_LANGUAGES = Object.freeze(['english', 'hindi', 'hinglish']);
+export const SUPPORTED_LANGUAGES = Object.freeze([
+  'english', 'hindi', 'hinglish',
+  'bengali', 'gujarati', 'kannada', 'malayalam', 'marathi', 'nepali',
+  'odia', 'punjabi', 'sinhala', 'tamil', 'telugu', 'urdu',
+]);
 
 const DEFAULT_BASE_PATH = '/public/avatars';
 

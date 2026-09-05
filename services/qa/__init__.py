@@ -18,6 +18,7 @@ import logging
 from typing import Any
 
 from services.rag import GROUNDING_THRESHOLD, retrieve
+from services.translation import language_name, localized
 
 logger = logging.getLogger(__name__)
 
@@ -41,12 +42,6 @@ _UNGROUNDED = {
         "karunga. Sawal dobara poochho, ya is lesson ke concepts ke baare mein "
         "poochho."
     ),
-}
-
-_LANGUAGE_NAME = {
-    "english": "English",
-    "hindi": "Hindi",
-    "hinglish": "Hinglish (romanised Hindi mixed with English)",
 }
 
 
@@ -73,7 +68,7 @@ def _llm_answer(
         f"Answer ONLY from the passages below. If they do not contain the "
         f"answer, say you cannot find it in the material. Never invent facts "
         f"or citations.\n\n"
-        f"Reply in {_LANGUAGE_NAME.get(language, 'English')}, in at most three "
+        f"Reply in {language_name(language)}, in at most three "
         f"short sentences, at a Class 9 level. Keep any formula exactly as "
         f"written.\n\n"
         f"PASSAGES:\n{context}\n\nQUESTION: {question}\n\nANSWER:"
@@ -96,7 +91,7 @@ def answer_question(
     clean = (question or "").strip()
     if not clean:
         return {
-            "answer": _UNGROUNDED.get(language, _UNGROUNDED["english"]),
+            "answer": localized(_UNGROUNDED, language),
             "citations": [],
             "grounded": False,
             "source": "none",
@@ -107,7 +102,7 @@ def answer_question(
 
     if not strong:
         return {
-            "answer": _UNGROUNDED.get(language, _UNGROUNDED["english"]),
+            "answer": localized(_UNGROUNDED, language),
             "citations": [],
             "grounded": False,
             "source": "no-match",
@@ -125,7 +120,7 @@ def answer_question(
         }
 
     # Extractive fallback: quote the material rather than paraphrase it badly.
-    lead = _LEAD_IN.get(language, _LEAD_IN["english"])
+    lead = localized(_LEAD_IN, language)
     best = citations[0]
     answer = f"{lead} \"{best['excerpt']}\" (page {best['pageOrSlide']})"
     return {

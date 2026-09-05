@@ -1227,3 +1227,16 @@ input[type="range"]::-moz-range-thumb {
   border-radius: inherit;
   display: block;
 }
+
+/* "More languages" dropdown beside the core segmented buttons. */
+.lang-more {
+  margin-top: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+}
+.lang-more:focus { outline: none; border-color: var(--accent); }

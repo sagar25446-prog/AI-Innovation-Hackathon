@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.translation import localized
+
 # A compact, language-neutral formula/recall bank keyed by concept id. Backs
 # are phrased so a learner can self-test after the lesson.
 _FLASH_BANK: dict[str, dict[str, str]] = {
@@ -56,9 +58,6 @@ def generate_flashcards(
     weak spots from long-term memory). Cards are deduplicated by concept and
     always include the core Ohm's Law formula card.
     """
-    if language not in _FLASH_BANK.get("ohms-law", {}):
-        language = "hinglish"
-
     wanted = set(concept_ids) if concept_ids else None
     seen: set[str] = set()
     cards: list[dict[str, str]] = []
@@ -80,7 +79,7 @@ def generate_flashcards(
         cards.append({
             "conceptId": concept_id,
             "front": front,
-            "back": bank.get(language, bank.get("english", "")),
+            "back": localized(bank, language),
         })
         seen.add(concept_id)
 
@@ -89,7 +88,7 @@ def generate_flashcards(
         cards.append({
             "conceptId": "ohms-law",
             "front": "State Ohm's Law.",
-            "back": _FLASH_BANK["ohms-law"][language],
+            "back": localized(_FLASH_BANK["ohms-law"], language),
         })
         seen.add("ohms-law")
 

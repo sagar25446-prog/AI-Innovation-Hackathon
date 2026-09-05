@@ -87,3 +87,33 @@ def deterministic_llm(request, monkeypatch):
     yield
     # The next test re-resolves from whatever the environment then holds.
     _reset_llm_module_state()
+
+
+# ---------------------------------------------------------------------------
+# Shared API client
+# ---------------------------------------------------------------------------
+#
+# This lived in test_api.py, so any other module that wanted it got
+# "fixture 'client' not found". Shared here instead, so endpoint tests can sit
+# in whichever module they belong to topically.
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from apps.api.main import app, repository  # noqa: E402
+
+
+@pytest.fixture
+def client(tmp_path):
+    from apps.api import main as m
+    from apps.api.student_memory import StudentMemoryStore
+
+    repository.reset()
+    # Isolate long-term memory from the shared on-disk store so endpoint tests
+    # are hermetic (the real store is file-backed and persists across runs).
+    saved_store = m.student_memory
+    m.student_memory = StudentMemoryStore(directory=str(tmp_path / "memory"))
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        m.student_memory = saved_store

@@ -16,10 +16,25 @@ import {
   clipRoleForScene,
 } from './prerendered-avatar-provider.js';
 
+// BCP-47 tags for the browser SpeechSynthesis fallback. The server's edge-tts
+// voices are the primary path; these only matter when /tts is unreachable.
+// Hinglish uses the Hindi tag because it is romanised Hindi, not English.
 const VOICE_BY_LANGUAGE = {
   english: 'en-IN',
   hindi: 'hi-IN',
   hinglish: 'hi-IN',
+  bengali: 'bn-IN',
+  gujarati: 'gu-IN',
+  kannada: 'kn-IN',
+  malayalam: 'ml-IN',
+  marathi: 'mr-IN',
+  nepali: 'ne-NP',
+  odia: 'or-IN',
+  punjabi: 'pa-IN',
+  sinhala: 'si-LK',
+  tamil: 'ta-IN',
+  telugu: 'te-IN',
+  urdu: 'ur-IN',
 };
 
 /**

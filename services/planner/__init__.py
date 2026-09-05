@@ -14,11 +14,18 @@ topic-agnostic planning while keeping the deterministic path as fallback.
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from typing import Any
 
 from services.ingestion import Material
 from services.planner.concepts import CONCEPTS_BY_ID
+from services.translation import (
+    CORE_LANGUAGES,
+    localize,
+    localize_batch,
+    localized,
+)
 from services.planner.persona import apply_persona_narration
 from services.rag import (
     best_citations,
@@ -135,11 +142,24 @@ def _tier_name_for(concept_ids: list[str]) -> str:
 
 
 def build_narration(concept: dict[str, Any], language: str, level: str) -> str:
-    """Base narration in the learner's language, deepened for higher levels."""
-    narration = concept["narration"][language]
+    """Base narration in the learner's language, deepened for higher levels.
+
+    The catalogue authors english/hindi/hinglish. The other twelve languages go
+    through ``translation.localized``, which returns a real translation when
+    Gemini is configured and the canonical English otherwise - so a Tamil
+    learner always gets a lesson, never a KeyError.
+    """
+    narration = localized(concept["narration"], language)
     if level == "beginner":
         return narration
-    extra = concept.get("depth", {}).get(language, {}).get(level)
+
+    depth = concept.get("depth", {})
+    # Depth notes are per-language then per-level; fall back to English before
+    # localising, so an extended language still gets the deeper explanation.
+    per_language = depth.get(language) or depth.get("english") or {}
+    extra = per_language.get(level)
+    if extra and language not in CORE_LANGUAGES:
+        extra = localize(extra, language)
     return f"{narration} {extra}" if extra else narration
 
 
@@ -173,6 +193,21 @@ def _plan_lesson_deterministic(
     tier_name = study_mode if study_mode != "lesson" else _tier_name_for(concept_ids)
     multiplier = LEVEL_DURATION_MULTIPLIER[level]
 
+    # Warm the translation cache for the whole lesson in one API call. Without
+    # this each narration and objective is translated individually - about 14
+    # serial round trips for a 7-scene lesson, which took two minutes on the
+    # plan screen and spent most of the free tier's daily quota on one lesson.
+    if language not in CORE_LANGUAGES:
+        strings: list[str] = []
+        for concept_id in concept_ids:
+            concept = CONCEPTS_BY_ID[concept_id]
+            strings.append(concept["narration"].get("english", ""))
+            strings.append(concept["objective"].get("english", ""))
+            depth = concept.get("depth", {}).get("english", {})
+            if level != "beginner" and depth.get(level):
+                strings.append(depth[level])
+        localize_batch(strings, language)
+
     raw_durations = [
         max(MIN_SCENE_SECONDS, int(round(CONCEPTS_BY_ID[cid]["baseSeconds"] * multiplier)))
         for cid in concept_ids
@@ -192,7 +227,7 @@ def _plan_lesson_deterministic(
         scene: dict[str, Any] = {
             "id": f"scene-{index + 1}-{concept_id}",
             "conceptId": concept_id,
-            "objective": concept["objective"][language],
+            "objective": localized(concept["objective"], language),
             "narration": narration,
             "visual": concept["visual"],
             "citations": best_citations(results),
@@ -639,6 +674,17 @@ def _has_groundable_content(material: Material) -> bool:
     return _curated_catalogue_grounds(material)
 
 
+def _prefer_curated() -> bool:
+    """Whether a topic the curated catalogue covers should skip the LLM.
+
+    Defaults on: reproducible lessons, a usable video cache, and quota left for
+    the topics that actually need generating.
+    """
+    return os.environ.get("GURUFLOW_PREFER_CURATED", "1").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
 def plan_lesson(
     learner: dict[str, Any],
     material: Material,
@@ -667,10 +713,22 @@ def plan_lesson(
     except Exception as exc:
         logger.warning("Vector indexing skipped: %s", exc)
 
-    llm_plan = _plan_lesson_llm(learner, material, topic, lesson_id)
-    if llm_plan is not None:
-        llm_plan["studyMode"] = study_mode
-        return llm_plan
+    # The curated catalogue is deterministic, instant, quota-free and - because
+    # it is byte-identical every time - the only plan whose videos can be
+    # pre-rendered and actually reused. Asking the LLM to re-plan a topic the
+    # catalogue already covers produces a *different* lesson each run, which
+    # silently invalidates the pre-rendered cache and spends free-tier quota
+    # that the off-catalogue topics genuinely need.
+    #
+    # So the LLM handles what the catalogue cannot, which is where it earns its
+    # keep. Set GURUFLOW_PREFER_CURATED=0 to force LLM planning everywhere.
+    if _prefer_curated() and _curated_catalogue_grounds(material):
+        logger.info("Curated catalogue covers %r; planning deterministically.", topic)
+    else:
+        llm_plan = _plan_lesson_llm(learner, material, topic, lesson_id)
+        if llm_plan is not None:
+            llm_plan["studyMode"] = study_mode
+            return llm_plan
 
     # Honest refusal over wrong content: with no LLM and nothing to ground on,
     # never silently teach the Electricity default to a learner who asked for

@@ -272,3 +272,82 @@ def test_an_upload_is_never_told_to_upload_something():
     material = ingest_text("Some off-catalogue prose about gradient descent.", "notes")
     text = _unsupported_topic_narration("english", material)
     assert "Upload a document" not in text
+
+
+# ---------------------------------------------------------------------------
+# Curated topics must not be re-planned by the LLM
+# ---------------------------------------------------------------------------
+
+
+def test_a_curated_topic_plans_deterministically_and_reproducibly():
+    """Two identical requests must produce byte-identical scene ids.
+
+    Otherwise every pre-rendered video is invalidated the moment the lesson is
+    planned again - which is exactly what happened once the LLM went live.
+    """
+    from services.ingestion import ingest_topic
+    from services.planner import plan_lesson
+
+    learner = {
+        "level": "beginner",
+        "language": "hinglish",
+        "availableMinutes": 20,
+        "goal": "Understand Ohm's Law",
+    }
+    first = plan_lesson(learner, ingest_topic("Ohm's Law"))
+    second = plan_lesson(learner, ingest_topic("Ohm's Law"))
+
+    assert first["tier"] != "llm-generated"
+    assert [s["id"] for s in first["scenes"]] == [s["id"] for s in second["scenes"]]
+
+
+def test_the_llm_is_not_called_for_a_curated_topic(monkeypatch):
+    """Free-tier quota belongs to the topics that actually need generating."""
+    import services.planner as planner
+    from services.ingestion import ingest_topic
+
+    called = []
+    monkeypatch.setattr(
+        planner, "_plan_lesson_llm", lambda *a, **k: called.append(1) or None
+    )
+    planner.plan_lesson(
+        {
+            "level": "beginner",
+            "language": "hinglish",
+            "availableMinutes": 20,
+            "goal": "g",
+        },
+        ingest_topic("Ohm's Law"),
+    )
+    assert called == [], "the LLM was called for a topic the catalogue covers"
+
+
+def test_an_off_catalogue_topic_still_reaches_the_llm(monkeypatch):
+    """The preference must not disable the LLM where it is the whole point."""
+    import services.planner as planner
+    from services.ingestion import ingest_topic
+
+    called = []
+    monkeypatch.setattr(
+        planner, "_plan_lesson_llm", lambda *a, **k: called.append(1) or None
+    )
+    planner.plan_lesson(
+        {
+            "level": "beginner",
+            "language": "english",
+            "availableMinutes": 10,
+            "goal": "g",
+        },
+        ingest_topic("Photosynthesis"),
+        topic="Photosynthesis",
+    )
+    assert called, "an off-catalogue topic must still be planned by the LLM"
+
+
+def test_the_preference_can_be_turned_off(monkeypatch):
+    import services.planner as planner
+
+    monkeypatch.setenv("GURUFLOW_PREFER_CURATED", "0")
+    assert planner._prefer_curated() is False
+    monkeypatch.setenv("GURUFLOW_PREFER_CURATED", "1")
+    assert planner._prefer_curated() is True

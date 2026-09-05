@@ -59,6 +59,8 @@ from services.planner.flashcards import generate_flashcards  # noqa: E402
 from services.planner.persona import persona_feedback  # noqa: E402
 from services.planner.study_plan import build_study_plan  # noqa: E402
 from services.qa import answer_question  # noqa: E402
+from services.translation import SUPPORTED_LANGUAGES  # noqa: E402
+from services.voice import VOICE_MAP  # noqa: E402
 from services import video as video_service  # noqa: E402
 
 WEB_DIR = REPO_ROOT / "apps" / "web"
@@ -217,7 +219,7 @@ def switch_language(lesson_id: str, body: dict[str, str]) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Lesson not found")
 
     language = body.get("language")
-    if language not in ("english", "hindi", "hinglish"):
+    if language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail="Unsupported language")
 
     material = repository.get_material(session.material_id)
@@ -448,12 +450,9 @@ def student_study_plan(student_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Text-to-Speech
 # ---------------------------------------------------------------------------
-
-VOICE_MAP = {
-    "english": "en-IN-MadhurNeural",
-    "hindi": "hi-IN-SwaraNeural",
-    "hinglish": "hi-IN-MadhurNeural",
-}
+# Female neural voices for all 15 teaching languages are imported above from
+# services.voice (single source of truth), so the /tts endpoint below uses
+# the same VOICE_MAP as the avatar pipeline.
 
 
 @app.post("/tts")

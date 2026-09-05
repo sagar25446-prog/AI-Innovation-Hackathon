@@ -9,7 +9,7 @@
       "required": ["level", "language", "availableMinutes", "goal"],
       "properties": {
         "level": { "type": "string", "enum": ["beginner", "intermediate", "advanced"] },
-        "language": { "type": "string", "enum": ["english", "hindi", "hinglish"] },
+        "language": { "type": "string", "enum": ["english", "hindi", "hinglish", "bengali", "gujarati", "kannada", "malayalam", "marathi", "nepali", "odia", "punjabi", "sinhala", "tamil", "telugu", "urdu"] },
         "availableMinutes": { "type": "integer", "minimum": 1, "maximum": 10080 },
         "goal": { "type": "string", "minLength": 1 },
         "priorKnowledge": { "type": "string" }

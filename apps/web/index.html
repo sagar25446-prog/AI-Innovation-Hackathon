@@ -173,10 +173,40 @@
               <input type="radio" id="lang-hindi" name="language" value="hindi" hidden />
               <label for="lang-hindi" data-choice="language">हिंदी</label>
             </div>
+            <!-- The three core languages have hand-authored narration, so they
+                 stay as first-class buttons. The other twelve are localised on
+                 demand and live in this dropdown rather than a 15-wide strip. -->
+            <select id="lang-more" class="lang-more" aria-label="More teaching languages">
+              <option value="">More languages…</option>
+              <option value="bengali">বাংলা (Bengali)</option>
+              <option value="gujarati">ગુજરાતી (Gujarati)</option>
+              <option value="kannada">ಕನ್ನಡ (Kannada)</option>
+              <option value="malayalam">മലയാളം (Malayalam)</option>
+              <option value="marathi">मराठी (Marathi)</option>
+              <option value="nepali">नेपाली (Nepali)</option>
+              <option value="odia">ଓଡ଼ିଆ (Odia)</option>
+              <option value="punjabi">ਪੰਜਾਬੀ (Punjabi)</option>
+              <option value="sinhala">සිංහල (Sinhala)</option>
+              <option value="tamil">தமிழ் (Tamil)</option>
+              <option value="telugu">తెలుగు (Telugu)</option>
+              <option value="urdu">اردو (Urdu)</option>
+            </select>
             <select id="language" name="_language" hidden aria-hidden="true">
               <option value="hinglish" selected>Hinglish</option>
               <option value="english">English</option>
               <option value="hindi">Hindi</option>
+              <option value="bengali">বাংলা (Bengali)</option>
+              <option value="gujarati">ગુજરાતી (Gujarati)</option>
+              <option value="kannada">ಕನ್ನಡ (Kannada)</option>
+              <option value="malayalam">മലയാളം (Malayalam)</option>
+              <option value="marathi">मराठी (Marathi)</option>
+              <option value="nepali">नेपाली (Nepali)</option>
+              <option value="odia">ଓଡ଼ିଆ (Odia)</option>
+              <option value="punjabi">ਪੰਜਾਬੀ (Punjabi)</option>
+              <option value="sinhala">සිංහල (Sinhala)</option>
+              <option value="tamil">தமிழ் (Tamil)</option>
+              <option value="telugu">తెలుగు (Telugu)</option>
+              <option value="urdu">اردو (Urdu)</option>
             </select>
           </div>
 
@@ -279,9 +309,21 @@
       <div class="classroom-tools">
         <label class="inline-label" for="lang-switch">Language</label>
         <select id="lang-switch" class="mini-select">
-          <option value="hinglish">Hinglish</option>
-          <option value="english">English</option>
-          <option value="hindi">Hindi</option>
+              <option value="hinglish" selected>Hinglish</option>
+              <option value="english">English</option>
+              <option value="hindi">Hindi</option>
+              <option value="bengali">বাংলা (Bengali)</option>
+              <option value="gujarati">ગુજરાતી (Gujarati)</option>
+              <option value="kannada">ಕನ್ನಡ (Kannada)</option>
+              <option value="malayalam">മലയാളം (Malayalam)</option>
+              <option value="marathi">मराठी (Marathi)</option>
+              <option value="nepali">नेपाली (Nepali)</option>
+              <option value="odia">ଓଡ଼ିଆ (Odia)</option>
+              <option value="punjabi">ਪੰਜਾਬੀ (Punjabi)</option>
+              <option value="sinhala">සිංහල (Sinhala)</option>
+              <option value="tamil">தமிழ் (Tamil)</option>
+              <option value="telugu">తెలుగు (Telugu)</option>
+              <option value="urdu">اردو (Urdu)</option>
         </select>
         <button id="video-btn" class="btn btn-ghost btn-sm" type="button" aria-pressed="false" disabled>Video</button>
         <button id="voice-btn" class="btn btn-ghost btn-sm" type="button" aria-pressed="false">Voice off</button>

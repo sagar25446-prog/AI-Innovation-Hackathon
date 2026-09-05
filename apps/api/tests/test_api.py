@@ -19,23 +19,6 @@ from fastapi.testclient import TestClient  # noqa: E402
 from apps.api.main import app, repository  # noqa: E402
 
 
-@pytest.fixture
-def client(tmp_path):
-    from apps.api import main as m
-    from apps.api.student_memory import StudentMemoryStore
-
-    repository.reset()
-    # Isolate long-term memory from the shared on-disk store so endpoint tests
-    # are hermetic (the real store is file-backed and persists across runs).
-    saved_store = m.student_memory
-    m.student_memory = StudentMemoryStore(directory=str(tmp_path / "memory"))
-    try:
-        with TestClient(app) as test_client:
-            yield test_client
-    finally:
-        m.student_memory = saved_store
-
-
 @pytest.fixture(autouse=True)
 def deterministic_engine(monkeypatch):
     """Force the deterministic planner for these endpoint tests.
