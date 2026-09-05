@@ -265,6 +265,29 @@ def switch_language(lesson_id: str, body: dict[str, str]) -> dict[str, Any]:
         topic=session.plan.get("topic", "Ohm's Law"),
         lesson_id=session.lesson_id,
     )
+
+    # Re-splice any repair scene the learner has already earned, rebuilt in the
+    # new language. The client used to keep its own copy across a switch, which
+    # left the one scene the learner most needed to understand stranded in the
+    # language they had just moved away from. The session knows which
+    # misconceptions are open, so the server is the right place to do this.
+    repairs = [
+        build_repair_scene(record["id"], language)
+        for record in session.misconceptions.values()
+    ]
+    if repairs:
+        checkpoint_at = next(
+            (
+                index
+                for index, scene in enumerate(session.plan["scenes"])
+                if scene.get("checkpointId")
+            ),
+            None,
+        )
+        if checkpoint_at is not None:
+            for offset, repair in enumerate(repairs):
+                session.plan["scenes"].insert(checkpoint_at + 1 + offset, repair)
+
     repository.save_session(session)
     return session.plan
 

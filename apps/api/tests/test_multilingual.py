@@ -571,3 +571,99 @@ def test_the_tts_endpoint_never_returns_a_server_error(client, language):
 
 def test_the_tts_endpoint_still_rejects_empty_text(client):
     assert client.post("/tts", json={"text": "  ", "language": "hindi"}).status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Switching language mid-lesson
+# ---------------------------------------------------------------------------
+
+
+def test_the_browser_language_list_matches_the_service():
+    """The media cache keys on this list; drift makes languages share a slot.
+
+    `normalizeLanguage` in services/media returns 'hinglish' for anything it
+    does not recognise, and that value is the cache key. A language missing
+    from the JS list therefore does not merely lose a label - it starts
+    serving another language's cached scene.
+    """
+    import re
+
+    source = (REPO_ROOT / "services/media/src/cached-descriptors.js").read_text(
+        encoding="utf-8"
+    )
+    block = re.search(
+        r"CANONICAL_LANGUAGES = new Set\(\[(.*?)\]\)", source, re.S
+    )
+    assert block, "CANONICAL_LANGUAGES not found in cached-descriptors.js"
+    listed = set(re.findall(r"'([a-z]+)'", block.group(1)))
+    assert listed == set(translation.SUPPORTED_LANGUAGES), (
+        f"JS/Python language lists differ: "
+        f"only in JS={listed - set(translation.SUPPORTED_LANGUAGES)}, "
+        f"only in Python={set(translation.SUPPORTED_LANGUAGES) - listed}"
+    )
+
+
+def test_switching_language_rebuilds_an_earned_repair_scene(client):
+    """The repair scene must follow the learner into the new language.
+
+    It used to be re-spliced from the client's own copy, so the one scene the
+    learner most needed to understand stayed in the language they had just
+    switched away from.
+    """
+    plan = client.post(
+        "/lessons/plan",
+        json={"learner": _learner("english"), "topic": "Ohm's Law"},
+    ).json()
+
+    checkpoint = next(s for s in plan["scenes"] if s.get("checkpointId"))
+    answer = client.post(
+        f"/lessons/{plan['id']}/checkpoints/{checkpoint['checkpointId']}/answer",
+        json={"answer": "current increases", "language": "english"},
+    ).json()
+    assert answer["nextAction"] == "repair"
+    english_repair = answer["repairScene"]["narration"]
+
+    switched = client.post(
+        f"/lessons/{plan['id']}/language", json={"language": "tamil"}
+    ).json()
+
+    repairs = [s for s in switched["scenes"] if s.get("isRepair")]
+    assert repairs, "the earned repair scene was dropped by the language switch"
+    assert repairs[0]["narration"] != english_repair, (
+        "the repair scene came back in the old language"
+    )
+    assert repairs[0]["narration"].strip()
+
+
+def test_a_repair_scene_stays_next_to_its_checkpoint_after_a_switch(client):
+    plan = client.post(
+        "/lessons/plan",
+        json={"learner": _learner("english"), "topic": "Ohm's Law"},
+    ).json()
+    checkpoint = next(s for s in plan["scenes"] if s.get("checkpointId"))
+    client.post(
+        f"/lessons/{plan['id']}/checkpoints/{checkpoint['checkpointId']}/answer",
+        json={"answer": "current increases", "language": "english"},
+    )
+
+    scenes = client.post(
+        f"/lessons/{plan['id']}/language", json={"language": "hindi"}
+    ).json()["scenes"]
+
+    checkpoint_at = next(i for i, s in enumerate(scenes) if s.get("checkpointId"))
+    assert scenes[checkpoint_at + 1].get("isRepair"), (
+        "the repair scene is no longer immediately after its checkpoint"
+    )
+
+
+def test_switching_language_without_a_repair_leaves_the_lesson_unchanged(client):
+    """A learner who has made no mistake must not acquire a repair scene."""
+    plan = client.post(
+        "/lessons/plan",
+        json={"learner": _learner("english"), "topic": "Ohm's Law"},
+    ).json()
+    switched = client.post(
+        f"/lessons/{plan['id']}/language", json={"language": "bhojpuri"}
+    ).json()
+    assert not any(s.get("isRepair") for s in switched["scenes"])
+    assert len(switched["scenes"]) == len(plan["scenes"])

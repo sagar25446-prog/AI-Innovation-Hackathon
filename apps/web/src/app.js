@@ -890,7 +890,6 @@ function handleNext() {
 async function handleLanguageSwitch(event) {
   const language = event.target.value;
   const keptIndex = state.sceneIndex;
-  const repairScenes = state.scenes.filter((s) => s.isRepair);
 
   // Silence the current narration before the await, not after it. Re-planning
   // is a network round trip; without this the old language keeps talking
@@ -902,12 +901,11 @@ async function handleLanguageSwitch(event) {
     state.plan = plan;
     state.scenes = plan.scenes.map((s) => ({ ...s }));
 
-    // Re-splice any repair scene so the learner does not lose it.
-    repairScenes.forEach((repair) => {
-      const checkpointAt = state.scenes.findIndex((s) => s.checkpointId);
-      state.checkpointIndex = checkpointAt;
-      state.scenes.splice(checkpointAt + 1, 0, repair);
-    });
+    // Repair scenes now arrive from the server already rebuilt in the new
+    // language. This used to re-splice the client's own copies, which kept
+    // the one scene the learner most needed to understand in the language
+    // they had just switched away from.
+    state.checkpointIndex = state.scenes.findIndex((s) => s.checkpointId);
 
     state.sceneIndex = Math.min(keptIndex, state.scenes.length - 1);
     startScene();

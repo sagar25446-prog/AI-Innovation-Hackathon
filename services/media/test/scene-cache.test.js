@@ -143,6 +143,26 @@ describe('SceneCache Test Suite', () => {
       assert.equal(normalizeLanguage(null), 'hinglish');
     });
 
+    test('every supported language keeps its own identity', () => {
+      // The regression that made language switching look broken: anything
+      // outside the original three collapsed to 'hinglish', so all thirteen
+      // extended languages shared one cache slot. A Tamil lesson asked for
+      // scene-1::hinglish, got the Hinglish descriptor, and replayed it.
+      for (const language of [
+        'bengali', 'bhojpuri', 'gujarati', 'kannada', 'malayalam', 'marathi',
+        'nepali', 'odia', 'punjabi', 'sinhala', 'tamil', 'telugu', 'urdu',
+      ]) {
+        assert.equal(normalizeLanguage(language), language);
+        assert.equal(normalizeLanguage(language.toUpperCase()), language);
+      }
+    });
+
+    test('only genuinely unusable input falls back to hinglish', () => {
+      assert.equal(normalizeLanguage('klingon'), 'hinglish');
+      assert.equal(normalizeLanguage(''), 'hinglish');
+      assert.equal(normalizeLanguage(42), 'hinglish');
+    });
+
     test('normalizeSceneId handles variations', () => {
       assert.equal(normalizeSceneId('scene-1'), 'scene-1-intro');
       assert.equal(normalizeSceneId('scene-1-current'), 'scene-1-intro');
@@ -152,5 +172,44 @@ describe('SceneCache Test Suite', () => {
       assert.equal(normalizeSceneId('scene-advance'), 'scene-advance-circuits');
       assert.equal(normalizeSceneId('ohms-law-repair-scene'), 'scene-repair-ohms-law');
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The cache must not let one language answer for another
+// ---------------------------------------------------------------------------
+
+test('SceneCache keeps languages apart', async (t) => {
+  const { SceneCache } = await import('../src/scene-cache.js');
+
+  await t.test('a descriptor stored for one language is not served for another', () => {
+    const cache = new SceneCache();
+    cache.set('scene-x-topic', 'tamil', { sceneId: 'scene-x-topic', language: 'tamil' });
+
+    assert.equal(cache.get('scene-x-topic', 'tamil').language, 'tamil');
+    // Before the fix both of these returned the Tamil descriptor, because
+    // every extended language normalised to 'hinglish'.
+    assert.equal(cache.get('scene-x-topic', 'bengali'), null);
+    assert.equal(cache.get('scene-x-topic', 'hinglish'), null);
+  });
+
+  await t.test('each language gets its own slot for the same scene', () => {
+    const cache = new SceneCache();
+    const languages = ['tamil', 'bengali', 'bhojpuri', 'odia', 'hinglish'];
+    languages.forEach((language) => {
+      cache.set('scene-y-topic', language, { sceneId: 'scene-y-topic', language });
+    });
+    languages.forEach((language) => {
+      assert.equal(cache.get('scene-y-topic', language).language, language);
+    });
+  });
+
+  await t.test('re-teaching a topic in a new language does not replay the old one', () => {
+    // The reported bug: finish Ohm's Law in Hinglish, start it again in Tamil,
+    // and the lesson came back in Hinglish because the scene ids are identical
+    // between runs and the cache key ignored the language.
+    const cache = new SceneCache();
+    cache.set('scene-5-ohms-law-x', 'hinglish', { captions: ['Ohm ka niyam'] });
+    assert.equal(cache.has('scene-5-ohms-law-x', 'tamil'), false);
   });
 });

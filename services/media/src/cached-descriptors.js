@@ -10,12 +10,42 @@
  * @param {string} lang
  * @returns {'english'|'hindi'|'hinglish'}
  */
+/**
+ * Every teaching language the product supports.
+ *
+ * This list exists because the fallback below used to swallow all of them.
+ * Keep it in step with `services/translation.SUPPORTED_LANGUAGES`; the test
+ * suite asserts the two agree.
+ */
+export const CANONICAL_LANGUAGES = new Set([
+  'english', 'hindi', 'hinglish',
+  'bengali', 'bhojpuri', 'gujarati', 'kannada', 'malayalam', 'marathi',
+  'nepali', 'odia', 'punjabi', 'sinhala', 'tamil', 'telugu', 'urdu',
+]);
+
+/**
+ * Canonical form of a language code.
+ *
+ * This is also the media cache's key material, which is why the unrecognised
+ * case matters so much. It used to return 'hinglish' for anything that was
+ * not one of the original three languages, so every one of the thirteen
+ * others shared a single cache slot: a Tamil lesson asked the cache for
+ * `scene-1::hinglish`, got the Hinglish descriptor, and played Hinglish
+ * captions over Tamil narration. Switching language mid-lesson appeared to do
+ * nothing, and starting a fresh lesson in another language replayed the
+ * language of whichever lesson had populated the cache first.
+ *
+ * A supported language now returns itself. 'hinglish' remains the fallback
+ * only for genuinely unusable input, where a demo descriptor is better than
+ * nothing.
+ */
 export function normalizeLanguage(lang) {
   if (!lang || typeof lang !== 'string') return 'hinglish';
   const l = lang.toLowerCase().trim();
-  if (l === 'en' || l === 'english' || l === 'eng') return 'english';
-  if (l === 'hi' || l === 'hindi' || l === 'hin') return 'hindi';
-  if (l === 'hinglish' || l === 'hi-latn' || l === 'hing') return 'hinglish';
+  if (l === 'en' || l === 'eng') return 'english';
+  if (l === 'hi' || l === 'hin') return 'hindi';
+  if (l === 'hi-latn' || l === 'hing') return 'hinglish';
+  if (CANONICAL_LANGUAGES.has(l)) return l;
   return 'hinglish';
 }
 
