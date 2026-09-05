@@ -42,6 +42,7 @@ from apps.api.models import (  # noqa: E402
     LessonPlan,
     MaterialRequest,
     PlanRequest,
+    QuizSubmission,
 )
 from apps.api.store import InMemoryLessonRepository, LessonSession  # noqa: E402
 from apps.api.student_memory import StudentMemoryStore  # noqa: E402
@@ -57,6 +58,8 @@ from services.ingestion import ingest_text, ingest_topic, Material  # noqa: E402
 from services.planner import plan_lesson  # noqa: E402
 from services.planner.flashcards import generate_flashcards  # noqa: E402
 from services.planner.persona import persona_feedback  # noqa: E402
+from services.assessment import build_quiz, grade_quiz  # noqa: E402
+from services.planner.learning_path import build_learning_path  # noqa: E402
 from services.planner.study_plan import build_study_plan  # noqa: E402
 from services.qa import answer_question  # noqa: E402
 from services.translation import SUPPORTED_LANGUAGES  # noqa: E402
@@ -145,6 +148,33 @@ def health() -> dict[str, Any]:
             "last_failure_reason", None),
         "rag": rag_status(),
         "video": video_service.cache_stats(),
+        # Which teaching languages are genuinely available right now, and by
+        # what route. The old failure mode was invisible: the service reported
+        # itself healthy while every Tamil string quietly came back in English
+        # because Gemini's daily quota was spent. This makes that legible.
+        "translation": _translation_status(),
+    }
+
+
+def _translation_status() -> dict[str, Any]:
+    from services import translation
+
+    per_language = {
+        language: translation.translation_health(language)
+        for language in translation.SUPPORTED_LANGUAGES
+    }
+    degraded = sorted(
+        language
+        for language, status in per_language.items()
+        if status["tier"] == "english-fallback"
+    )
+    return {
+        "supported": len(translation.SUPPORTED_LANGUAGES),
+        "authored": list(translation.CORE_LANGUAGES),
+        # A language in this list will teach in English no matter what the
+        # learner picked, so it is the one number worth alerting on.
+        "degradedToEnglish": degraded,
+        "languages": per_language,
     }
 
 
@@ -346,7 +376,58 @@ def _report_for_session(session: LessonSession) -> dict[str, Any]:
         checkpoints_passed=session.checkpoints_passed,
         checkpoints_failed=session.checkpoints_failed,
         total_time_seconds=session.elapsed_seconds(),
+        language=session.plan.get("learner", {}).get("language", "english"),
+        quiz_result=session.quiz_result,
     )
+
+
+# ---------------------------------------------------------------------------
+# End-of-lesson assessment
+# ---------------------------------------------------------------------------
+
+
+@app.post("/lessons/{lesson_id}/quiz")
+def lesson_quiz(lesson_id: str) -> dict[str, Any]:
+    """Build the final quiz for a finished lesson.
+
+    Questions are drawn only from concepts this lesson actually taught, and
+    ordered so the ones the learner stumbled on come first. Answer keys stay
+    server-side; the client receives prompts and options only.
+    """
+    session = repository.get_session(lesson_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+
+    quiz = build_quiz(
+        session.plan.get("scenes", []),
+        session.plan.get("learner", {}).get("language", "hinglish"),
+        concept_mastery=session.concept_mastery,
+    )
+    if not quiz["questions"]:
+        # An off-catalogue lesson with no LLM to write questions. Say so
+        # plainly rather than serving an empty quiz screen.
+        raise HTTPException(
+            status_code=503,
+            detail="No quiz could be generated for this lesson; the report still applies.",
+        )
+    return quiz
+
+
+@app.post("/lessons/{lesson_id}/quiz/submit")
+def submit_lesson_quiz(lesson_id: str, payload: QuizSubmission) -> dict[str, Any]:
+    """Grade the final quiz and fold the result into the learner's record."""
+    session = repository.get_session(lesson_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+
+    language = session.plan.get("learner", {}).get("language", "hinglish")
+    result = grade_quiz(
+        [r.model_dump() for r in payload.responses],
+        language,
+    )
+    session.record_quiz(result)
+    repository.save_session(session)
+    return result
 
 
 @app.get("/lessons/{lesson_id}/report", response_model=LearningReport)
@@ -426,6 +507,38 @@ def lesson_flashcards(lesson_id: str, body: dict[str, Any] | None = None) -> dic
         "count": len(cards),
         "cards": cards,
     }
+
+
+@app.get("/learning-path")
+def learning_path(
+    topic: str,
+    language: str = "hinglish",
+    level: str = "beginner",
+    studentId: str | None = None,
+) -> dict[str, Any]:
+    """An ordered module sequence for a topic too broad for a single lesson.
+
+    "Teach me Machine Learning" is a curriculum request, not a lesson request.
+    When ``studentId`` is given, the learner's long-term mastery decides which
+    modules are already complete and which are still locked behind their
+    prerequisites, so the path is a position in a journey rather than a
+    brochure.
+    """
+    mastery: dict[str, float] = {}
+    if studentId:
+        profile = student_memory.get_profile(studentId)
+        if profile:
+            mastery = profile.get("conceptMastery", {})
+
+    path = build_learning_path(topic, language, concept_mastery=mastery, level=level)
+    if path is None:
+        # Not a curriculum-sized topic. Say so plainly; the client then plans a
+        # single lesson, which is the right answer for "what is a resistor".
+        raise HTTPException(
+            status_code=404,
+            detail="This topic is best taught as a single lesson.",
+        )
+    return path
 
 
 @app.get("/students/{student_id}/study-plan")

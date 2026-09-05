@@ -109,6 +109,17 @@ class AnswerRequest(BaseModel):
     studentId: str = "student-demo"
 
 
+class QuizResponse(BaseModel):
+    questionId: str
+    # Free text for short answers, an option id for MCQs, a number (as text)
+    # for numeric problems. The grader knows which by question type.
+    response: str = ""
+
+
+class QuizSubmission(BaseModel):
+    responses: list[QuizResponse] = []
+
+
 class MisconceptionRecord(BaseModel):
     id: str
     status: str
@@ -133,3 +144,10 @@ class LearningReport(BaseModel):
     scenesCompleted: int
     checkpointsPassed: int
     checkpointsFailed: int
+    # Present once the learner has taken the end-of-lesson quiz. None means the
+    # score above is inferred from checkpoint evidence instead.
+    quizTaken: bool = False
+    quizScore: float | None = None
+    quizVerdict: str | None = None
+    quizCorrect: int | None = None
+    quizTotal: int | None = None

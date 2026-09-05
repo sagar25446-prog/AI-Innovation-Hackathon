@@ -51,7 +51,7 @@ const MISCONCEPTION_EXPLAIN = {
  * Screen handling
  * ------------------------------------------------------------------ */
 
-const SCREENS = ['landing', 'why', 'onboarding', 'plan', 'classroom', 'report', 'profile'];
+const SCREENS = ['landing', 'why', 'onboarding', 'plan', 'classroom', 'quiz', 'report', 'profile'];
 
 function showScreen(name, opts = {}) {
   SCREENS.forEach((screen) => {
@@ -866,7 +866,7 @@ function firstTeachingSceneAfter(index) {
 
 function goToScene(index) {
   if (index >= state.scenes.length) {
-    showReport();
+    showQuiz();
     return;
   }
   state.sceneIndex = Math.max(0, index);
@@ -1004,6 +1004,200 @@ async function showCompletionAvatar() {
   } catch {
     // No clip on disk yet: leave the slot hidden and say nothing.
   }
+}
+
+/* --------------------------------------------------------------------------
+ * End-of-lesson assessment
+ *
+ * The lesson ends with a short quiz, and the report's score comes from it.
+ * Everything here degrades rather than blocks: no quiz available, a failed
+ * submission, or a learner in a hurry all end at the report, because a report
+ * built from checkpoint evidence is still worth more than a dead end.
+ * ----------------------------------------------------------------------- */
+
+const quiz = {
+  questions: [],
+  answers: new Map(),   // questionId -> the learner's current answer
+  submitted: false,
+};
+
+async function showQuiz() {
+  stopTimer();
+  // The lesson video must not keep narrating over the quiz.
+  if (video.enabled) {
+    video.enabled = false;
+    showVideoStage(false);
+    setVideoButton('ready');
+  }
+
+  showScreen('quiz');
+  showLoading($('quiz-body'), 'Putting a few questions together...');
+
+  const payload = await state.client.getQuiz(state.plan.id);
+  if (!payload || !payload.questions || !payload.questions.length) {
+    // Nothing to ask - an off-catalogue lesson with no model to write
+    // questions. Go straight to the report rather than showing an empty page.
+    showReport();
+    return;
+  }
+
+  quiz.questions = payload.questions;
+  quiz.answers = new Map();
+  quiz.submitted = false;
+  renderQuiz();
+}
+
+function renderQuiz() {
+  const body = $('quiz-body');
+  body.textContent = '';
+
+  quiz.questions.forEach((question, index) => {
+    const card = document.createElement('div');
+    card.className = 'quiz-question';
+    card.dataset.questionId = question.id;
+
+    const head = document.createElement('div');
+    head.className = 'quiz-question-head';
+    const number = document.createElement('span');
+    number.className = 'quiz-number';
+    number.textContent = String(index + 1);
+    const prompt = document.createElement('p');
+    prompt.className = 'quiz-prompt';
+    prompt.textContent = question.prompt;
+    head.append(number, prompt);
+    card.appendChild(head);
+
+    if (question.type === 'mcq') {
+      const list = document.createElement('div');
+      list.className = 'quiz-options';
+      question.options.forEach((option) => {
+        const label = document.createElement('label');
+        label.className = 'quiz-option';
+        const input = document.createElement('input');
+        input.type = 'radio';
+        input.name = question.id;
+        input.value = option.id;
+        input.addEventListener('change', () => {
+          quiz.answers.set(question.id, option.id);
+          updateQuizProgress();
+        });
+        const text = document.createElement('span');
+        text.textContent = option.text;
+        label.append(input, text);
+        list.appendChild(label);
+      });
+      card.appendChild(list);
+    } else {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'quiz-input';
+      input.placeholder =
+        question.type === 'numeric'
+          ? 'Your answer' + (question.unit ? ' (' + question.unit + ')' : '')
+          : 'Answer in your own words';
+      input.addEventListener('input', () => {
+        quiz.answers.set(question.id, input.value);
+        updateQuizProgress();
+      });
+      card.appendChild(input);
+
+      if (question.hint) {
+        const hint = document.createElement('p');
+        hint.className = 'quiz-hint';
+        hint.textContent = question.hint;
+        card.appendChild(hint);
+      }
+    }
+
+    // Filled in after grading.
+    const verdict = document.createElement('div');
+    verdict.className = 'quiz-verdict';
+    verdict.hidden = true;
+    card.appendChild(verdict);
+
+    body.appendChild(card);
+  });
+
+  updateQuizProgress();
+}
+
+function updateQuizProgress() {
+  const answered = quiz.questions.filter((question) => {
+    const value = quiz.answers.get(question.id);
+    return value !== undefined && String(value).trim() !== '';
+  }).length;
+  $('quiz-progress').textContent = answered + ' of ' + quiz.questions.length + ' answered';
+}
+
+async function submitQuiz() {
+  if (quiz.submitted) return;
+  const button = $('quiz-submit');
+  button.disabled = true;
+  button.textContent = 'Marking...';
+
+  const responses = quiz.questions.map((question) => ({
+    questionId: question.id,
+    response: String(quiz.answers.get(question.id) ?? ''),
+  }));
+
+  let result;
+  try {
+    result = await state.client.submitQuiz(state.plan.id, responses);
+  } catch (err) {
+    // Never strand the learner on an ungraded quiz.
+    $('quiz-progress').textContent = 'Could not reach the marker - showing your report instead.';
+    showReport();
+    return;
+  }
+
+  quiz.submitted = true;
+  renderQuizResults(result);
+}
+
+function renderQuizResults(result) {
+  const byId = new Map((result.results || []).map((item) => [item.questionId, item]));
+
+  quiz.questions.forEach((question) => {
+    const card = document.querySelector(
+      '.quiz-question[data-question-id="' + question.id + '"]'
+    );
+    if (!card) return;
+    const outcome = byId.get(question.id);
+    if (!outcome) return;
+
+    card.classList.add(outcome.correct ? 'is-correct' : 'is-incorrect');
+    card.querySelectorAll('input').forEach((input) => {
+      input.disabled = true;
+    });
+
+    const verdict = card.querySelector('.quiz-verdict');
+    verdict.hidden = false;
+    const mark = document.createElement('strong');
+    mark.textContent = outcome.correct ? 'Correct' : 'Not quite';
+    const explanation = document.createElement('p');
+    // The distractor's own explanation: why *this* answer is wrong, rather
+    // than only what the right one was.
+    explanation.textContent = outcome.explanation || '';
+    verdict.append(mark, explanation);
+  });
+
+  const summary = document.createElement('div');
+  summary.className = 'quiz-summary';
+  const score = document.createElement('div');
+  score.className = 'quiz-score';
+  score.textContent = Math.round((result.score || 0) * 100) + '%';
+  const detail = document.createElement('p');
+  detail.textContent =
+    result.verdictText ||
+    (result.correctCount ?? 0) + ' of ' + (result.questionCount ?? 0) + ' correct.';
+  summary.append(score, detail);
+  $('quiz-body').prepend(summary);
+  summary.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  $('quiz-progress').textContent = 'Marked';
+  const button = $('quiz-submit');
+  button.disabled = false;
+  button.textContent = 'See my report';
 }
 
 async function showReport() {
@@ -1581,6 +1775,12 @@ function init() {
   $('demo-btn').addEventListener('click', loadDemoPreset);
   $('restart-btn').addEventListener('click', restart);
   $('report-restart').addEventListener('click', restart);
+  $('quiz-submit').addEventListener('click', () => {
+    // After marking, the same button becomes the way through to the report.
+    if (quiz.submitted) showReport();
+    else submitQuiz();
+  });
+  $('quiz-skip').addEventListener('click', showReport);
   $('profile-btn').addEventListener('click', showProfile);
   $('profile-back').addEventListener('click', () => showScreen('report'));
 

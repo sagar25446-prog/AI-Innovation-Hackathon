@@ -572,7 +572,30 @@
     </div>
   </section>
 
-  <!-- 4. REPORT ---------------------------------------------------------- -->
+  <!-- 4. FINAL ASSESSMENT ------------------------------------------------ -->
+  <!-- Sits between the lesson and the report: the report's score comes from
+       what the learner answers here. Skippable, because a learner who has to
+       leave should still get a report. -->
+  <section id="screen-quiz" class="screen" hidden>
+    <div class="card quiz-card">
+      <header class="quiz-header">
+        <div>
+          <h2 class="report-title">Let us check what stuck</h2>
+          <p class="hint" id="quiz-intro">A few questions on what we just covered. Take your time - a wrong answer is worth more than a lucky guess, because it tells me what to explain again.</p>
+        </div>
+        <div class="quiz-progress" id="quiz-progress" aria-live="polite"></div>
+      </header>
+
+      <div id="quiz-body"></div>
+
+      <div class="quiz-actions">
+        <button id="quiz-submit" class="btn btn-primary btn-lg" type="button">Submit answers</button>
+        <button id="quiz-skip" class="btn btn-ghost" type="button">Skip to my report</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. REPORT ---------------------------------------------------------- -->
   <section id="screen-report" class="screen" hidden>
     <div class="card report-card">
       <h2 class="report-title">Your learning report</h2>
@@ -588,7 +611,7 @@
     </div>
   </section>
 
-  <!-- 5. LEARNING PROFILE DASHBOARD -------------------------------------- -->
+  <!-- 6. LEARNING PROFILE DASHBOARD -------------------------------------- -->
   <section id="screen-profile" class="screen" hidden>
     <div class="card report-card">
       <h2 class="report-title">Your learning profile</h2>

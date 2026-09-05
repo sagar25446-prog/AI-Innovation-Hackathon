@@ -390,3 +390,163 @@ Return ONLY the narration text, no JSON."""
     except Exception as exc:
         logger.warning("Gemini repair narration failed: %s", exc)
         return None
+
+
+def generate_quiz_questions(
+    scenes: list[dict[str, Any]], language: str, limit: int = 5
+) -> list[dict[str, Any]]:
+    """Write end-of-lesson questions for a lesson the authored bank misses.
+
+    Curated lessons use ``services.assessment.QUESTION_BANK``, which is
+    deterministic and needs no network. This covers the other case: a learner
+    uploaded their own material, so the concepts are whatever the planner found
+    in it and no bank could have anticipated them.
+
+    Returns ``[]`` on any failure. A lesson with no quiz still produces a report
+    from checkpoint evidence, so the degraded path is a smaller report rather
+    than a broken one.
+    """
+    taught = [
+        {
+            "conceptId": scene.get("conceptId", ""),
+            "objective": scene.get("objective", ""),
+            "narration": scene.get("narration", ""),
+        }
+        for scene in (scenes or [])
+        if scene.get("conceptId") and not scene.get("isRepair")
+    ][:8]
+    if not taught:
+        return []
+
+    outline = "\n".join(
+        f"- {item['conceptId']}: {item['objective']} | {item['narration'][:220]}"
+        for item in taught
+    )
+    prompt = (
+        f"You are an experienced school teacher writing a short end-of-lesson "
+        f"quiz. The lesson covered these concepts:\n\n{outline}\n\n"
+        f"Write at most {limit} questions that test whether the student can "
+        f"USE these ideas, not just repeat them. Mix multiple-choice and "
+        f"short-answer. For every wrong multiple-choice option, explain why a "
+        f"student might pick it and why it is wrong - that explanation is shown "
+        f"to the learner, so make it teach.\n"
+        f"Do not change numbers, unit symbols, variable letters or equations.\n"
+        f"Return ONLY a JSON array. Each element must be either\n"
+        f'  {{"id": "...", "type": "mcq", "conceptId": "...", '
+        f'"prompt": {{"english": "..."}}, "options": [{{"id": "a", '
+        f'"text": {{"english": "..."}}, "correct": true}}, {{"id": "b", '
+        f'"text": {{"english": "..."}}, "why": {{"english": "..."}}}}]}}\n'
+        f'or {{"id": "...", "type": "short", "conceptId": "...", '
+        f'"prompt": {{"english": "..."}}, "keywords": ["..."], '
+        f'"model": {{"english": "..."}}}}\n'
+        f"Use concept ids exactly as given above."
+    )
+
+    try:
+        raw = _call_with_model_fallback(lambda model: _generate_text(prompt))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Quiz generation failed: %s", exc)
+        return []
+
+    from services.translation import _parse_json_array
+
+    if not raw:
+        return []
+    import json as _json
+
+    text = raw.strip()
+    start, end = text.find("["), text.rfind("]")
+    if start == -1 or end <= start:
+        return []
+    try:
+        parsed = _json.loads(text[start : end + 1])
+    except _json.JSONDecodeError:
+        logger.warning("Quiz generation returned unparseable JSON")
+        return []
+    if not isinstance(parsed, list):
+        return []
+
+    # Keep only questions this module knows how to grade, so a malformed
+    # element cannot reach the grader.
+    valid = []
+    for item in parsed:
+        if not isinstance(item, dict) or item.get("type") not in ("mcq", "short"):
+            continue
+        if not item.get("id") or not isinstance(item.get("prompt"), dict):
+            continue
+        if item["type"] == "mcq":
+            options = item.get("options")
+            if not isinstance(options, list) or not any(
+                isinstance(o, dict) and o.get("correct") for o in options
+            ):
+                continue
+        elif not isinstance(item.get("model"), dict):
+            continue
+        valid.append(item)
+    return valid[:limit]
+
+
+def grade_short_answer(
+    question: str, answer: str, language: str
+) -> dict[str, Any] | None:
+    """Judge a free-text answer semantically, the way a teacher would.
+
+    Keyword matching cannot tell "voltage pushes the charge along" from
+    "voltage is pushed by the charge". This can. Returns None when the model is
+    unavailable, and the caller falls back to keyword overlap.
+    """
+    prompt = (
+        f"You are marking one short answer from a Class 9 student.\n"
+        f"QUESTION: {question}\n"
+        f"STUDENT ANSWER: {answer}\n\n"
+        f"Decide whether the answer shows real understanding, allowing for "
+        f"informal wording and spelling mistakes. Then write one or two "
+        f"sentences of feedback addressed to the student, in a warm and "
+        f"encouraging voice. Never use the words 'wrong' or 'incorrect'.\n"
+        f'Return ONLY JSON: {{"correct": true or false, "feedback": "..."}}'
+    )
+    try:
+        result = _generate_json(prompt)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Short-answer grading failed: %s", exc)
+        return None
+    if not isinstance(result, dict) or "correct" not in result:
+        return None
+    return {"correct": bool(result["correct"]), "feedback": result.get("feedback", "")}
+
+
+def generate_learning_path(topic: str, level: str = "beginner") -> dict[str, Any] | None:
+    """Design a module sequence for a topic too broad for one lesson.
+
+    Used only when ``services.planner.learning_path`` has no authored path for
+    the topic. The caller validates and topologically sorts whatever comes
+    back, so a plausible-looking but unteachable ordering cannot reach a
+    learner.
+
+    Returns None when the topic does not actually warrant a path - "what is a
+    resistor" is a lesson, not a curriculum, and saying so is more useful than
+    inventing eight modules for it.
+    """
+    prompt = (
+        f"A {level} student asks to learn: {topic}\n\n"
+        f"If this is narrow enough to teach in a single lesson, reply with "
+        f'exactly {{"tooNarrow": true}}.\n'
+        f"Otherwise design a learning path of 4 to 10 modules. Order matters: "
+        f"a module may only require modules that come before it. Each module "
+        f"must be a teachable lesson on its own, and 'why' must say what it "
+        f"unlocks - not restate the title.\n"
+        f"Return ONLY JSON of the form:\n"
+        f'{{"title": "...", "summary": "...", "modules": ['
+        f'{{"id": "kebab-case-id", "title": "...", "why": "...", '
+        f'"requires": ["earlier-module-id"], "estimatedMinutes": 15}}]}}'
+    )
+    try:
+        result = _generate_json(prompt)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Learning path generation failed: %s", exc)
+        return None
+    if not isinstance(result, dict) or result.get("tooNarrow"):
+        return None
+    if not isinstance(result.get("modules"), list) or not result["modules"]:
+        return None
+    return result
