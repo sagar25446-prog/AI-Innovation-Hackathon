@@ -26,6 +26,7 @@ import os
 import shutil
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -70,6 +71,17 @@ _RENDER_LOCK = threading.Lock()
 # Hash -> "rendering" | "ready" | "failed:<reason>"
 _STATUS: dict[str, str] = {}
 _STATUS_LOCK = threading.Lock()
+
+# When each "rendering" mark was set, so an abandoned render can be retried.
+# Without this a scene whose worker died stays "rendering" for the life of the
+# process: render_in_background returns early on that status and
+# prerender_lesson will not re-queue it, so the only recovery was a restart -
+# discovered with two repair scenes stuck for half an hour.
+_RENDER_STARTED: dict[str, float] = {}
+
+# Generous: a real render is ~2 minutes with the talking head enabled, so this
+# only trips on something genuinely abandoned.
+STALE_RENDER_SECONDS = int(os.environ.get("GURUFLOW_STALE_RENDER_SECONDS", "1800"))
 
 
 @dataclass
@@ -132,6 +144,21 @@ def get_status(vid: str) -> str:
 def _set_status(vid: str, status: str) -> None:
     with _STATUS_LOCK:
         _STATUS[vid] = status
+        if status == "rendering":
+            _RENDER_STARTED[vid] = time.time()
+        else:
+            _RENDER_STARTED.pop(vid, None)
+
+
+def _is_stale_render(vid: str) -> bool:
+    """True when a render says "rendering" but nothing is plausibly doing it.
+
+    Caller must hold _STATUS_LOCK.
+    """
+    if _STATUS.get(vid) != "rendering":
+        return False
+    started = _RENDER_STARTED.get(vid)
+    return started is None or (time.time() - started) > STALE_RENDER_SECONDS
 
 
 def _first_citation(scene: dict[str, Any]) -> str:
@@ -310,9 +337,10 @@ def render_in_background(scene: dict[str, Any], language: str = "hinglish") -> s
     if cached_path(vid) is not None:
         return vid
     with _STATUS_LOCK:
-        if _STATUS.get(vid) == "rendering":
+        if _STATUS.get(vid) == "rendering" and not _is_stale_render(vid):
             return vid
         _STATUS[vid] = "rendering"
+        _RENDER_STARTED[vid] = time.time()
 
     def worker() -> None:
         try:
@@ -330,16 +358,25 @@ def prerender_lesson(scenes: list[dict[str, Any]], language: str = "hinglish") -
     ids = [video_id(scene, language) for scene in scenes]
 
     def worker() -> None:
-        for scene in scenes:
+        for scene, vid in zip(scenes, ids):
             try:
                 render_scene_video(scene, language)
             except Exception as exc:
-                logger.warning("Prerender skipped a scene: %s", exc)
+                # Mark it failed rather than leaving it "rendering" forever,
+                # which made /video/status never reach complete and gave the
+                # caller nothing to act on.
+                logger.warning("Prerender failed for %s: %s", vid, exc)
+                _set_status(vid, "failed:prerender")
 
+    now = time.time()
     for vid in ids:
         with _STATUS_LOCK:
-            if cached_path(vid) is None and vid not in _STATUS:
+            if cached_path(vid) is not None:
+                continue
+            # Re-queue anything not started, or abandoned by a dead worker.
+            if vid not in _STATUS or _is_stale_render(vid):
                 _STATUS[vid] = "rendering"
+                _RENDER_STARTED[vid] = now
 
     threading.Thread(target=worker, daemon=True, name="video-prerender").start()
     return ids
