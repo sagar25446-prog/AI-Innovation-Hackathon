@@ -863,3 +863,80 @@ alarms.
 1. **Rotate the leaked key** (above). Then put the new one in `apps/api/.env`.
 2. Re-run the `live_llm` test once quota resets, to close 1b.
 3. Avatar clip files - unchanged.
+
+---
+
+# ADDENDUM 3 - 2026-09-05: fifteen languages, and two bugs the run exposed
+
+Completed the outstanding items from the handover list, applied the
+`services/translation` work from the supplied zip, and fixed what running it
+turned up.
+
+## Applied from the zip
+
+Nine backend files plus the new `services/translation` module. Everything else
+in the zip differed only by line endings; eight files differed genuinely, and
+all eight were the multilingual wiring.
+
+## Three defects found, not inherited
+
+**1. The planner was never localised.** `build_narration` and the objective
+lookup still did `mapping[language]`, so planning in any of the twelve extended
+languages raised `KeyError` before producing a scene. Evaluation, flashcards,
+qa and voice had all been localised; the planner had been missed, which meant
+the feature did not work end to end at all. Both now go through `localized()`,
+and depth notes fall back to English before localising so higher levels keep
+their deeper explanation.
+
+**2. The curated demo was being re-planned by the LLM.** With a live key,
+`/lessons/{id}/video/status` fell from 9/9 to 2/8: Gemini re-planned Ohm's Law
+on every request, producing different scene ids, so every pre-rendered video
+was orphaned. This is exactly the failure pre-rendering exists to prevent - a
+two-minute spinner per scene in front of judges - and it was also spending
+free-tier quota on the one topic that needs it least. Curated topics now plan
+deterministically; the LLM keeps everything off-catalogue, which is where it
+earns its keep. `GURUFLOW_PREFER_CURATED=0` restores the old behaviour.
+
+**3. Translation was one API call per string.** A Tamil lesson took **1m57s**
+and spent 14 of the 20 daily requests. `localize_batch` sends the whole lesson
+in one call and primes the cache. A mismatched reply is discarded rather than
+zipped, which would have attached each translation to the wrong sentence.
+
+## The handover items
+
+* **test_video_voice_qa join defect** - fixed. `"".join(VOICE_MAP.values())`
+  raises `TypeError` now that Odia and Punjabi map to `None`. Filtered before
+  joining, pinned the two `None` entries so voice coverage cannot regress
+  silently, and added a format check on every voice id.
+* **Frontend** - the three hand-authored languages stay as segmented buttons;
+  the twelve localised ones live in a dropdown, because a fifteen-wide strip
+  does not fit. Whichever control is touched last wins and the other visibly
+  clears. Classroom switcher offers all fifteen. `media-adapter` maps every
+  language to a BCP-47 tag; `prerendered-avatar-provider` accepts all fifteen.
+* **Tests** - `apps/api/tests/test_multilingual.py`, 115 tests: the language
+  set, the contract enum and Pydantic literal agreeing with the service,
+  offline `localize` returning the source, and plan/evaluate/flashcards/ask in
+  all fifteen - including that feedback never says "wrong" in any language and
+  that `I = V/R` survives. All offline.
+* **Per-language prerender** - scoped to the **three core languages** (27
+  videos, ~50 min). All fifteen would be **4.3 hours**, and offline the twelve
+  extended narrate in English, so their audio would be identical to the English
+  lesson. Rendering all fifteen would spend hours to produce twelve copies of
+  the same soundtrack.
+* **Push** - done to `develop`. Not `git init`: the working tree is already a
+  clone with the correct remote.
+
+The `client` fixture moved from `test_api.py` to `conftest.py`; living in a
+test module meant any other module asking for it got "fixture not found".
+
+## Status
+
+**326 Python tests, 121 JS tests.** Everything pushed to `develop`.
+
+## Honest note on "fifteen languages"
+
+That is coverage, not authoring depth. Three are hand-written throughout;
+twelve are localised on demand and narrate in **English** when Gemini is
+unreachable. Thirteen have a female neural voice; Odia and Punjabi have none.
+`docs/KNOWN_LIMITATIONS.md` says so plainly - do not claim fifteen hand-written
+curricula to a judge.
