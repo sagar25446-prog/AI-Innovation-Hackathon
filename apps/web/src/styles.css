@@ -3,25 +3,49 @@
    so the demo renders identically with the network switched off. */
 
 :root {
-  --bg: #0f1117;
-  --bg-raised: #171a23;
-  --bg-input: #1e222d;
-  --border: #2a2f3d;
-  --border-bright: #3a4152;
-  --text: #e8eaf0;
-  --text-dim: #9aa3b8;
-  --text-faint: #6b7488;
-  --accent: #6c8cff;
-  --accent-soft: rgba(108, 140, 255, 0.14);
-  --good: #3ecf8e;
-  --good-soft: rgba(62, 207, 142, 0.14);
-  --warn: #f5a524;
-  --warn-soft: rgba(245, 165, 36, 0.14);
-  --radius: 12px;
-  --radius-sm: 8px;
-  --shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  /* Surfaces climb in real steps so elevation reads without a border doing all
+     the work. The old --bg/--bg-raised pair differed by ~4% and everything
+     looked like one flat sheet. A hint of blue keeps the greys from going
+     muddy under the accent. */
+  --bg: #0b0d13;
+  --bg-elev-1: #12151d;
+  --bg-raised: #161a24;
+  --bg-elev-2: #1b1f2b;
+  --bg-input: #1e2330;
+
+  --border: #272d3b;
+  --border-bright: #3b4358;
+
+  --text: #eef0f6;
+  --text-dim: #a3abbf;
+  --text-faint: #6f7890;
+
+  --accent: #7c8cff;
+  --accent-strong: #6172ff;
+  --accent-soft: rgba(124, 140, 255, 0.14);
+  --accent-glow: rgba(124, 140, 255, 0.28);
+  /* Second hue for gradients, so the brand is not one flat blue. */
+  --accent-2: #b06cff;
+
+  --good: #3ddc97;
+  --good-soft: rgba(61, 220, 151, 0.13);
+  --warn: #ffb547;
+  --warn-soft: rgba(255, 181, 71, 0.13);
+  --bad: #ff6b6b;
+
+  --radius: 14px;
+  --radius-sm: 9px;
+  --radius-lg: 20px;
+
+  /* Layered shadows read as depth; a single large blur reads as fog. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.35), 0 10px 24px -8px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 24px -8px rgba(0, 0, 0, 0.55), 0 32px 64px -24px rgba(0, 0, 0, 0.6);
+
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 * { box-sizing: border-box; }
@@ -1362,3 +1386,180 @@ input[type="range"]::-moz-range-thumb {
   .why-card { padding: 20px; }
   .why-cta .btn { width: 100%; min-width: 0; }
 }
+
+/* ==========================================================================
+   Professional polish
+   Appended last so it refines the existing rules rather than rewriting them.
+   ========================================================================== */
+
+/* --- Page ground: a faint aurora so the dark is not a flat sheet ---------- */
+
+body {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(900px 500px at 12% -8%, rgba(124, 140, 255, 0.10), transparent 60%),
+    radial-gradient(760px 420px at 92% 2%, rgba(176, 108, 255, 0.07), transparent 62%);
+  background-attachment: fixed;
+}
+
+::selection { background: var(--accent-soft); color: var(--text); }
+
+/* Keyboard users get a visible ring; mouse users do not. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Scrollbars matched to the surface, so they stop looking like the OS default. */
+* { scrollbar-width: thin; scrollbar-color: var(--border-bright) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--border-bright);
+  border-radius: 8px;
+  border: 2px solid var(--bg);
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+/* --- Type: tighter headings, the single biggest "designed" signal --------- */
+
+h1, h2, h3 { letter-spacing: -0.02em; }
+.hero h2, .why-head h2 { letter-spacing: -0.032em; }
+
+.eyebrow {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* --- Brand mark ---------------------------------------------------------- */
+
+.brand-mark {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  box-shadow: 0 4px 14px -4px var(--accent-glow);
+}
+
+.topbar {
+  background: rgba(11, 13, 19, 0.72);
+  backdrop-filter: saturate(140%) blur(12px);
+  -webkit-backdrop-filter: saturate(140%) blur(12px);
+}
+
+/* --- Buttons ------------------------------------------------------------- */
+
+.btn {
+  transition: background 0.18s var(--ease), border-color 0.18s var(--ease),
+    transform 0.14s var(--ease), box-shadow 0.18s var(--ease);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+  box-shadow: 0 2px 10px -2px var(--accent-glow);
+  border: none;
+}
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--accent-strong) 0%, var(--accent) 100%);
+  box-shadow: 0 6px 20px -4px var(--accent-glow);
+  transform: translateY(-1px);
+}
+.btn-primary:active { transform: translateY(0); }
+
+.btn-ghost:hover { background: var(--bg-elev-2); }
+
+/* --- Cards: real elevation instead of a 1px outline ---------------------- */
+
+.card,
+.feature-card,
+.why-card,
+.lobby-card {
+  box-shadow: var(--shadow);
+}
+
+.feature-card {
+  transition: transform 0.2s var(--ease), border-color 0.2s var(--ease),
+    box-shadow 0.2s var(--ease);
+}
+.feature-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--border-bright);
+  box-shadow: var(--shadow-lg);
+}
+
+/* --- Feature icons: SVG in an accent-tinted tile ------------------------- */
+
+.feature-icon {
+  color: var(--accent);
+  background: linear-gradient(135deg, var(--accent-soft), rgba(176, 108, 255, 0.08));
+  border-color: rgba(124, 140, 255, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.feature-icon svg { width: 21px; height: 21px; display: block; }
+
+/* --- Inputs -------------------------------------------------------------- */
+
+input[type="text"], textarea, select {
+  transition: border-color 0.16s var(--ease), box-shadow 0.16s var(--ease),
+    background 0.16s var(--ease);
+}
+input[type="text"]:hover, textarea:hover, select:hover { border-color: var(--border-bright); }
+
+/* --- Progress ------------------------------------------------------------ */
+
+.progress-fill {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  box-shadow: 0 0 12px -2px var(--accent-glow);
+}
+
+/* --- Badges: pill weight, not shouty ------------------------------------- */
+
+.badge { border: 1px solid transparent; }
+.badge-good { border-color: rgba(61, 220, 151, 0.28); }
+.badge-warn { border-color: rgba(255, 181, 71, 0.28); }
+.badge-accent { border-color: rgba(124, 140, 255, 0.30); }
+
+/* --- Classroom panels ---------------------------------------------------- */
+
+.teacher-panel, .canvas-panel {
+  box-shadow: var(--shadow);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 40%);
+}
+
+.captions {
+  background: linear-gradient(90deg, var(--accent-soft), transparent 55%), var(--bg-input);
+}
+
+/* --- Nav ----------------------------------------------------------------- */
+
+.nav-link { position: relative; transition: color 0.16s var(--ease); }
+.nav-link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -6px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transform: scaleX(0);
+  transition: transform 0.2s var(--ease);
+}
+.nav-link:hover::after, .nav-link.active::after { transform: scaleX(1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn:hover, .feature-card:hover, .why-card:hover { transform: none; }
+}
+
+/* Inline icons in the hero ticker and upload dropzone, replacing emoji that
+   rendered differently on every OS. */
+.ticker-ico {
+  width: 15px;
+  height: 15px;
+  vertical-align: -3px;
+  margin-right: 3px;
+  color: var(--accent);
+}
+.lobby-ticker { display: block; }
+.dropzone-icon svg { width: 26px; height: 26px; color: var(--accent); }
