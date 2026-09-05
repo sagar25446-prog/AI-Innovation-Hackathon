@@ -232,6 +232,13 @@ function renderPlan() {
   const meta = $('plan-meta');
   meta.textContent = '';
 
+  // Point the classroom's language control at this plan as soon as the plan
+  // exists, not when the lesson starts. It used to keep the *previous*
+  // lesson's language until "Start learning" was pressed, so a learner who
+  // glanced at it after planning a new lesson was told the wrong language.
+  const switcher = $('lang-switch');
+  if (switcher) switcher.value = plan.learner.language;
+
   const chips = [
     { text: plan.learner.level, cls: 'badge-accent' },
     { text: plan.learner.language, cls: 'badge-accent' },
@@ -1586,11 +1593,23 @@ function syncSliderLabel() {
   if (label) label.textContent = `${value} min`;
 }
 
+/**
+ * Fill the form with the demo lesson and submit it.
+ *
+ * Language is deliberately left alone. It used to be forced to 'hinglish'
+ * here, which meant a learner who picked Telugu and then reached for the demo
+ * button got a Hinglish lesson - while the dropdown still displayed "Telugu",
+ * so the interface disagreed with what they were hearing. The rest of these
+ * fields describe *the demo* (which topic, how long, what goal); the language
+ * describes *the learner*, and this button has no business overwriting it.
+ *
+ * A first-time visitor still gets Hinglish, because that is what the form
+ * starts checked with.
+ */
 function loadDemoPreset() {
   $('topic').value = "Ohm's Law";
   $('material-text').value = '';
   setRadio('level', 'beginner');
-  setRadio('language', 'hinglish');
   $('minutes-slider').value = '20';
   setRadio('study-mode', 'lesson');
   $('goal').value = "Understand Ohm's Law";

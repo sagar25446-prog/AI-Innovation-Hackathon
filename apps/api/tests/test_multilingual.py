@@ -667,3 +667,29 @@ def test_switching_language_without_a_repair_leaves_the_lesson_unchanged(client)
     ).json()
     assert not any(s.get("isRepair") for s in switched["scenes"])
     assert len(switched["scenes"]) == len(plan["scenes"])
+
+
+def test_the_demo_button_does_not_overwrite_the_chosen_language():
+    """Picking a language and then pressing "demo" must keep the language.
+
+    `loadDemoPreset` used to call `setRadio('language', 'hinglish')` before
+    submitting the form. A learner who chose Telugu and then reached for the
+    demo button got a Hinglish lesson - and the dropdown still displayed
+    "Telugu", so the interface disagreed with what they were hearing. Every
+    other field it presets describes the *demo*; the language describes the
+    *learner*.
+
+    Asserted against the source because the frontend has no DOM harness. It is
+    a narrow check, but it is exactly the line that caused the bug.
+    """
+    import re
+
+    source = (REPO_ROOT / "apps/web/src/app.js").read_text(encoding="utf-8")
+    body = re.search(
+        r"function loadDemoPreset\(\)\s*\{(.*?)\n\}", source, re.S
+    )
+    assert body, "loadDemoPreset not found in app.js"
+    assert "'language'" not in body.group(1), (
+        "loadDemoPreset touches the language control again; it must leave the "
+        "learner's choice alone."
+    )
