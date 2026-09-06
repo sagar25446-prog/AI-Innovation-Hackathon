@@ -1,4 +1,4 @@
-# GuruFlow - AI Teacher of the Future
+# GuruFlow - AI Teacher of the  Future
 
 GuruFlow is a source-grounded, multilingual AI teacher that creates personalized,
 adaptive lessons, checks understanding, detects misconceptions, and re-teaches
