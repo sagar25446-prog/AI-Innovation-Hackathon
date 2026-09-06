@@ -75,10 +75,12 @@ export class ServerTTSProvider extends TTSProvider {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text, language }),
         });
-        if (response.ok) {
+        if (response.ok && response.status !== 204) {
           const blob = await response.blob();
-          const audioUrl = URL.createObjectURL(blob);
-          return { audioUrl, durationSeconds, format: 'mp3' };
+          if (blob.size > 0) {
+            const audioUrl = URL.createObjectURL(blob);
+            return { audioUrl, durationSeconds, format: 'mp3' };
+          }
         }
       } catch {
         this.serverAvailable = false;
@@ -116,13 +118,17 @@ export class ServerTTSProvider extends TTSProvider {
         signal: controller ? controller.signal : undefined,
       })
         .then((response) => {
-          if (!response.ok) throw new Error('TTS failed');
+          if (!response.ok || response.status === 204) throw new Error('TTS failed');
           return response.blob();
         })
         .then((blob) => {
           // Superseded while we waited: drop it, and free the blob rather than
           // leaking one object URL per abandoned scene.
           if (token !== this._playToken) return;
+          if (blob.size === 0) {
+            this._fallbackBrowserSpeak(text, language, { onStart, onEnd });
+            return;
+          }
 
           const audioUrl = URL.createObjectURL(blob);
           const audio = new Audio(audioUrl);
