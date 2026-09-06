@@ -909,6 +909,14 @@ def request_scene_video(body: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="A scene object is required")
 
     language = body.get("language") or "hinglish"
+
+    # Check the cache first: seeded demo videos should still be served even
+    # when the rendering pipeline (manim / ffmpeg) is unavailable, e.g. on
+    # serverless platforms like Vercel.
+    vid = video_service.video_id(scene, language)
+    if video_service.cached_path(vid) is not None:
+        return _video_payload(vid)
+
     if not video_service.video_generation_available():
         raise HTTPException(
             status_code=503,
@@ -993,10 +1001,17 @@ def prerender_lesson_videos(lesson_id: str) -> dict[str, Any]:
     session = repository.get_session(lesson_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Lesson not found")
-    if not video_service.video_generation_available():
-        raise HTTPException(status_code=503, detail="Video generation unavailable")
 
     language = session.plan["learner"]["language"]
+
+    # When rendering is unavailable (e.g. on Vercel), return the status of
+    # any already-cached/seeded videos rather than a blanket 503. The demo
+    # lesson's videos are seeded at startup and can still be served.
+    if not video_service.video_generation_available():
+        scenes = _lesson_video_scenes(session)
+        ids = [video_service.video_id(s, language) for s in scenes]
+        return {"lessonId": lesson_id, "videoIds": ids, "count": len(ids)}
+
     ids = video_service.prerender_lesson(_lesson_video_scenes(session), language)
     return {"lessonId": lesson_id, "videoIds": ids, "count": len(ids)}
 
